@@ -1,0 +1,16 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": ["src/cli/index.ts", "src/mcp/index.ts"],
+  "project": ["src/**/*.ts"],
+  "ignore": ["**/*.test.ts", "test/**"],
+  "ignoreDependencies": [
+    "pino-pretty",
+    "yaml",
+    "@commitlint/config-conventional",
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/github",
+    "@semantic-release/npm",
+    "@semantic-release/release-notes-generator",
+    "pupt"
+  ]
+}
