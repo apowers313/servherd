@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/servherd"><img src="https://img.shields.io/npm/v/servherd.svg" alt="npm version"></a>
   <a href="https://github.com/apowers313/servherd/actions/workflows/ci.yml"><img src="https://github.com/apowers313/servherd/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
-  <a href="https://codecov.io/gh/apowers313/servherd"><img src="https://codecov.io/gh/apowers313/servherd/branch/main/graph/badge.svg" alt="Coverage"></a>
+  <a href="https://coveralls.io/github/apowers313/servherd?branch=master"><img src="https://coveralls.io/repos/github/apowers313/servherd/badge.svg?branch=master" alt="Coverage"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
 </p>
 
