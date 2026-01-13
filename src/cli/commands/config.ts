@@ -21,14 +21,23 @@ export interface ConfigCommandOptions {
   refreshAll?: boolean;
   tag?: string;
   dryRun?: boolean;
+  add?: string;
+  remove?: string;
+  listVars?: boolean;
 }
 
 // Valid top-level config keys
-const VALID_TOP_LEVEL_KEYS = ["version", "hostname", "protocol", "portRange", "tempDir", "pm2", "httpsCert", "httpsKey", "refreshOnChange"];
+const VALID_TOP_LEVEL_KEYS = ["version", "hostname", "protocol", "portRange", "tempDir", "pm2", "httpsCert", "httpsKey", "refreshOnChange", "variables"];
 const VALID_NESTED_KEYS = ["portRange.min", "portRange.max", "pm2.logDir", "pm2.pidDir"];
 
 // Config keys that can affect server commands (used for drift detection)
 const SERVER_AFFECTING_KEYS = ["hostname", "httpsCert", "httpsKey"];
+
+// Reserved variable names that cannot be used for custom variables
+const RESERVED_VARIABLE_NAMES = ["port", "hostname", "url", "https-cert", "https-key"];
+
+// Regex pattern for valid variable names (must match template regex)
+const VARIABLE_NAME_PATTERN = /^[\w-]+$/;
 
 function isValidKey(key: string): boolean {
   return VALID_TOP_LEVEL_KEYS.includes(key) || VALID_NESTED_KEYS.includes(key);
@@ -158,6 +167,84 @@ export async function executeConfig(options: ConfigCommandOptions): Promise<Conf
     return {
       refreshResults,
       dryRun: options.dryRun,
+    };
+  }
+
+  // Handle --list-vars
+  if (options.listVars) {
+    const config = await configService.load();
+    return {
+      variables: config.variables ?? {},
+    };
+  }
+
+  // Handle --add
+  if (options.add) {
+    const name = options.add;
+
+    if (options.value === undefined) {
+      return {
+        addedVar: false,
+        error: "--value is required when using --add",
+      };
+    }
+
+    // Validate variable name format
+    if (!VARIABLE_NAME_PATTERN.test(name)) {
+      return {
+        addedVar: false,
+        error: `Invalid variable name "${name}". Variable names can only contain letters, numbers, underscores, and hyphens.`,
+      };
+    }
+
+    // Check for reserved names
+    if (RESERVED_VARIABLE_NAMES.includes(name)) {
+      return {
+        addedVar: false,
+        error: `"${name}" is a reserved variable name. Reserved names: ${RESERVED_VARIABLE_NAMES.join(", ")}`,
+      };
+    }
+
+    const config = await configService.load();
+    const updatedConfig: GlobalConfig = {
+      ...config,
+      variables: {
+        ...(config.variables ?? {}),
+        [name]: options.value,
+      },
+    };
+    await configService.save(updatedConfig);
+
+    return {
+      addedVar: true,
+      varName: name,
+      varValue: options.value,
+    };
+  }
+
+  // Handle --remove
+  if (options.remove) {
+    const name = options.remove;
+    const config = await configService.load();
+
+    if (!config.variables || !(name in config.variables)) {
+      return {
+        removedVar: false,
+        error: `Variable "${name}" does not exist`,
+      };
+    }
+
+    const updatedVariables = { ...config.variables };
+    delete updatedVariables[name];
+    const updatedConfig: GlobalConfig = {
+      ...config,
+      variables: updatedVariables,
+    };
+    await configService.save(updatedConfig);
+
+    return {
+      removedVar: true,
+      varName: name,
     };
   }
 
@@ -380,6 +467,9 @@ export async function configAction(options: {
   reset?: boolean;
   force?: boolean;
   json?: boolean;
+  add?: string;
+  remove?: string;
+  listVars?: boolean;
 }): Promise<void> {
   try {
     const result = await executeConfig(options);

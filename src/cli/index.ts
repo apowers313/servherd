@@ -141,13 +141,16 @@ export function createProgram(): Command {
     .option("-s, --show", "Show current configuration (default)")
     .option("-g, --get <key>", "Get a specific configuration value")
     .option("--set <key>", "Set a configuration value (use with --value)")
-    .option("--value <value>", "Value to set (use with --set)")
+    .option("--value <value>", "Value to set (use with --set or --add)")
     .option("-r, --reset", "Reset configuration to defaults")
     .option("-f, --force", "Skip confirmation prompt for reset")
     .option("--refresh <name>", "Refresh a specific server with config drift")
     .option("--refresh-all", "Refresh all servers with config drift")
     .option("-t, --tag <tag>", "Refresh servers with this tag (use with --refresh-all)")
     .option("--dry-run", "Show what would be refreshed without making changes")
+    .option("--add <name>", "Add a custom template variable (use with --value)")
+    .option("--remove <name>", "Remove a custom template variable")
+    .option("--list-vars", "List all custom template variables")
     .action(async (options, cmd) => {
       const globalOpts = cmd.parent?.opts() ?? {};
       await configAction({ ...options, json: globalOpts.json });
@@ -160,6 +163,25 @@ export function createProgram(): Command {
     .action(async () => {
       await mcpAction();
     });
+
+  // Handle unknown commands with a helpful error message
+  const knownCommands = ["start", "stop", "list", "ls", "info", "logs", "restart", "remove", "rm", "config", "mcp", "help"];
+  program.on("command:*", (operands) => {
+    const unknownCommand = operands[0];
+    if (!knownCommands.includes(unknownCommand)) {
+      console.error(`error: unknown command '${unknownCommand}'`);
+      console.error();
+      console.error("Did you mean to run an external command? Use 'start' with '--':");
+      console.error(`  servherd start -- ${operands.join(" ")}`);
+      console.error();
+      console.error("For example:");
+      console.error("  servherd start -- npx vite --port {{port}}");
+      console.error("  servherd start -n my-server -- npm run dev");
+      console.error();
+      console.error("Run 'servherd --help' for usage information.");
+      process.exit(1);
+    }
+  });
 
   return program;
 }

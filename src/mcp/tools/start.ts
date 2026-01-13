@@ -13,15 +13,16 @@ export const startToolName = "servherd_start";
 
 export const startToolDescription =
   "Start a development server with automatic port assignment and process management. " +
-  "Use this tool when you need to launch a new server process or verify an existing server is running. " +
+  "Server identity is determined by working directory + name. " +
+  "Without a name, a deterministic name is generated from command + env variables, so different command/env = different server. " +
+  "With an explicit name, you can update the command/env for an existing server (it will restart with the new config). " +
   "The command can include {{port}}, {{hostname}}, and {{url}} template variables that will be substituted with actual values. " +
-  "Returns the server name, assigned port, full URL, and status (started, existing, or restarted). " +
-  "If an identical server is already running, it will return the existing server details rather than starting a duplicate.";
+  "Returns the server name, assigned port, full URL, and status (started, existing, or restarted).";
 
 export const startToolSchema = z.object({
   command: z.string().describe("The command to run, e.g., 'npm start --port {{port}}' or 'python -m http.server {{port}}'"),
   cwd: z.string().optional().describe("Working directory for the server, e.g., '/home/user/my-project'. Defaults to current directory"),
-  name: z.string().optional().describe("Human-readable name for the server, e.g., 'frontend-dev' or 'api-server'. Auto-generated if not provided"),
+  name: z.string().optional().describe("Human-readable name for the server, e.g., 'frontend-dev' or 'api-server'. With explicit name, you can update command/env and the same server will be reused. Auto-generated deterministically from command+env if not provided"),
   tags: z.array(z.string()).optional().describe("Tags for filtering/grouping servers, e.g., ['frontend', 'development']"),
   description: z.string().optional().describe("Description of the server's purpose, e.g., 'React development server for the dashboard'"),
   env: z.record(z.string()).optional().describe("Environment variables, e.g., {\"NODE_ENV\": \"development\", \"API_URL\": \"http://localhost:{{port}}\"}"),
@@ -30,7 +31,7 @@ export const startToolSchema = z.object({
 export type StartToolInput = z.infer<typeof startToolSchema>;
 
 export interface StartToolResult {
-  action: "started" | "existing" | "restarted" | "renamed";
+  action: "started" | "existing" | "restarted" | "renamed" | "refreshed";
   name: string;
   port: number;
   url: string;
@@ -39,6 +40,10 @@ export interface StartToolResult {
   portReassigned?: boolean;
   originalPort?: number;
   previousName?: string;
+  /** Whether config drift was detected and applied */
+  configDrift?: boolean;
+  /** Details of config drift that was applied */
+  driftDetails?: string[];
 }
 
 export async function handleStartTool(input: StartToolInput): Promise<StartToolResult> {
@@ -87,11 +92,19 @@ export async function handleStartTool(input: StartToolInput): Promise<StartToolR
     case "renamed":
       message = `Server renamed from "${result.previousName}" to "${result.server.name}" at ${url}`;
       break;
+    case "refreshed":
+      message = `Server "${result.server.name}" refreshed with new config at ${url}`;
+      break;
   }
 
   // Add port reassignment info to message if applicable
   if (result.portReassigned) {
     message += ` (port ${result.originalPort} was unavailable, reassigned to ${result.server.port})`;
+  }
+
+  // Add drift details to message if applicable
+  if (result.driftDetails && result.driftDetails.length > 0) {
+    message += `. Config changes: ${result.driftDetails.join(", ")}`;
   }
 
   return {
@@ -104,5 +117,7 @@ export async function handleStartTool(input: StartToolInput): Promise<StartToolR
     portReassigned: result.portReassigned,
     originalPort: result.originalPort,
     previousName: result.previousName,
+    configDrift: result.configDrift,
+    driftDetails: result.driftDetails,
   };
 }

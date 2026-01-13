@@ -484,6 +484,199 @@ describe("config command", () => {
     });
   });
 
+  describe("--add (custom variables)", () => {
+    it("should add a custom variable", async () => {
+      mockConfigService.load.mockResolvedValue({ ...DEFAULT_CONFIG, variables: {} });
+
+      const result = await executeConfig({ add: "my-token", value: "secret123" });
+
+      expect(mockConfigService.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          variables: { "my-token": "secret123" },
+        }),
+      );
+      expect(result.addedVar).toBe(true);
+      expect(result.varName).toBe("my-token");
+      expect(result.varValue).toBe("secret123");
+    });
+
+    it("should update an existing custom variable", async () => {
+      mockConfigService.load.mockResolvedValue({
+        ...DEFAULT_CONFIG,
+        variables: { "my-token": "old-value" },
+      });
+
+      const result = await executeConfig({ add: "my-token", value: "new-value" });
+
+      expect(mockConfigService.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          variables: { "my-token": "new-value" },
+        }),
+      );
+      expect(result.addedVar).toBe(true);
+    });
+
+    it("should return error when --value is missing", async () => {
+      const result = await executeConfig({ add: "my-token" });
+
+      expect(result.addedVar).toBe(false);
+      expect(result.error).toContain("--value is required");
+    });
+
+    it("should reject reserved variable name 'port'", async () => {
+      const result = await executeConfig({ add: "port", value: "8080" });
+
+      expect(result.addedVar).toBe(false);
+      expect(result.error).toContain("reserved variable name");
+    });
+
+    it("should reject reserved variable name 'hostname'", async () => {
+      const result = await executeConfig({ add: "hostname", value: "test" });
+
+      expect(result.addedVar).toBe(false);
+      expect(result.error).toContain("reserved variable name");
+    });
+
+    it("should reject reserved variable name 'url'", async () => {
+      const result = await executeConfig({ add: "url", value: "test" });
+
+      expect(result.addedVar).toBe(false);
+      expect(result.error).toContain("reserved variable name");
+    });
+
+    it("should reject reserved variable name 'https-cert'", async () => {
+      const result = await executeConfig({ add: "https-cert", value: "/path" });
+
+      expect(result.addedVar).toBe(false);
+      expect(result.error).toContain("reserved variable name");
+    });
+
+    it("should reject reserved variable name 'https-key'", async () => {
+      const result = await executeConfig({ add: "https-key", value: "/path" });
+
+      expect(result.addedVar).toBe(false);
+      expect(result.error).toContain("reserved variable name");
+    });
+
+    it("should reject invalid variable name with special characters", async () => {
+      const result = await executeConfig({ add: "my@token", value: "test" });
+
+      expect(result.addedVar).toBe(false);
+      expect(result.error).toContain("Invalid variable name");
+    });
+
+    it("should allow variable names with hyphens", async () => {
+      mockConfigService.load.mockResolvedValue({ ...DEFAULT_CONFIG, variables: {} });
+
+      const result = await executeConfig({ add: "my-api-token", value: "secret" });
+
+      expect(result.addedVar).toBe(true);
+      expect(result.varName).toBe("my-api-token");
+    });
+
+    it("should allow variable names with underscores", async () => {
+      mockConfigService.load.mockResolvedValue({ ...DEFAULT_CONFIG, variables: {} });
+
+      const result = await executeConfig({ add: "my_api_token", value: "secret" });
+
+      expect(result.addedVar).toBe(true);
+      expect(result.varName).toBe("my_api_token");
+    });
+
+    it("should allow empty string values", async () => {
+      mockConfigService.load.mockResolvedValue({ ...DEFAULT_CONFIG, variables: {} });
+
+      const result = await executeConfig({ add: "empty-var", value: "" });
+
+      expect(result.addedVar).toBe(true);
+      expect(result.varValue).toBe("");
+    });
+  });
+
+  describe("--remove (custom variables)", () => {
+    it("should remove an existing custom variable", async () => {
+      mockConfigService.load.mockResolvedValue({
+        ...DEFAULT_CONFIG,
+        variables: { "my-token": "secret", "other-var": "value" },
+      });
+
+      const result = await executeConfig({ remove: "my-token" });
+
+      expect(mockConfigService.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          variables: { "other-var": "value" },
+        }),
+      );
+      expect(result.removedVar).toBe(true);
+      expect(result.varName).toBe("my-token");
+    });
+
+    it("should return error when variable does not exist", async () => {
+      mockConfigService.load.mockResolvedValue({
+        ...DEFAULT_CONFIG,
+        variables: {},
+      });
+
+      const result = await executeConfig({ remove: "nonexistent" });
+
+      expect(result.removedVar).toBe(false);
+      expect(result.error).toContain("does not exist");
+    });
+
+    it("should return error when variables section is empty", async () => {
+      mockConfigService.load.mockResolvedValue({
+        ...DEFAULT_CONFIG,
+        variables: undefined,
+      });
+
+      const result = await executeConfig({ remove: "any-var" });
+
+      expect(result.removedVar).toBe(false);
+      expect(result.error).toContain("does not exist");
+    });
+  });
+
+  describe("--list-vars (custom variables)", () => {
+    it("should list all custom variables", async () => {
+      mockConfigService.load.mockResolvedValue({
+        ...DEFAULT_CONFIG,
+        variables: {
+          "my-token": "secret123",
+          "api-key": "abc456",
+        },
+      });
+
+      const result = await executeConfig({ listVars: true });
+
+      expect(result.variables).toEqual({
+        "my-token": "secret123",
+        "api-key": "abc456",
+      });
+    });
+
+    it("should return empty object when no variables defined", async () => {
+      mockConfigService.load.mockResolvedValue({
+        ...DEFAULT_CONFIG,
+        variables: {},
+      });
+
+      const result = await executeConfig({ listVars: true });
+
+      expect(result.variables).toEqual({});
+    });
+
+    it("should return empty object when variables section is undefined", async () => {
+      mockConfigService.load.mockResolvedValue({
+        ...DEFAULT_CONFIG,
+        variables: undefined,
+      });
+
+      const result = await executeConfig({ listVars: true });
+
+      expect(result.variables).toEqual({});
+    });
+  });
+
   describe("refreshOnChange configuration", () => {
     it("should set refreshOnChange to manual", async () => {
       const result = await executeConfig({ set: "refreshOnChange", value: "manual" });

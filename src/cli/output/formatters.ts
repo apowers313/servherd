@@ -92,10 +92,20 @@ export function formatServerListTable(servers: ServerListItem[]): string {
  * Format start result output
  */
 export interface StartResult {
-  action: "started" | "existing" | "restarted" | "renamed";
+  action: "started" | "existing" | "restarted" | "renamed" | "refreshed";
   server: ServerEntry;
   status: ServerStatus;
   previousName?: string;
+  /** Whether port was reassigned due to unavailability or config change */
+  portReassigned?: boolean;
+  /** Original port before reassignment */
+  originalPort?: number;
+  /** Whether config drift was detected and applied */
+  configDrift?: boolean;
+  /** Details of config drift that was applied */
+  driftDetails?: string[];
+  /** User declined refresh when prompted */
+  userDeclinedRefresh?: boolean;
 }
 
 export function formatStartResult(result: StartResult): string {
@@ -117,6 +127,9 @@ export function formatStartResult(result: StartResult): string {
     case "renamed":
       lines.push(chalk.green(`✓ Server renamed from "${result.previousName}" to "${server.name}"`));
       break;
+    case "refreshed":
+      lines.push(chalk.green(`↻ Server "${server.name}" refreshed (config changed)`));
+      break;
   }
 
   lines.push(`  ${chalk.bold("Name:")}   ${server.name}`);
@@ -124,6 +137,24 @@ export function formatStartResult(result: StartResult): string {
   lines.push(`  ${chalk.bold("URL:")}    ${chalk.cyan(url)}`);
   lines.push(`  ${chalk.bold("Status:")} ${formatStatus(status)}`);
   lines.push(`  ${chalk.bold("CWD:")}    ${server.cwd}`);
+
+  // Show port reassignment if it happened
+  if (result.portReassigned && result.originalPort !== undefined) {
+    lines.push(`  ${chalk.yellow(`⚠ Port reassigned: ${result.originalPort} → ${server.port}`)}`);
+  }
+
+  // Show config drift details if present
+  if (result.driftDetails && result.driftDetails.length > 0) {
+    lines.push(`  ${chalk.bold("Config changes applied:")}`);
+    for (const detail of result.driftDetails) {
+      lines.push(`    ${chalk.dim("•")} ${detail}`);
+    }
+  }
+
+  // Show user declined message if applicable
+  if (result.userDeclinedRefresh) {
+    lines.push(`  ${chalk.yellow("⚠ Config has changed but refresh was declined")}`);
+  }
 
   return lines.join("\n");
 }
@@ -501,6 +532,17 @@ export interface ConfigResult {
   refreshResults?: RefreshResult[];
   dryRun?: boolean;
 
+  // For --list-vars
+  variables?: Record<string, string>;
+
+  // For --add
+  addedVar?: boolean;
+  varName?: string;
+  varValue?: string;
+
+  // For --remove
+  removedVar?: boolean;
+
   // For errors
   error?: string;
 }
@@ -516,6 +558,47 @@ export function formatConfigResult(result: ConfigResult): string {
   // Handle --refresh / --refresh-all
   if (result.refreshResults) {
     return formatRefreshResult(result.refreshResults, result.dryRun);
+  }
+
+  // Handle --list-vars
+  if (result.variables !== undefined) {
+    const vars = result.variables;
+    const varKeys = Object.keys(vars);
+
+    if (varKeys.length === 0) {
+      return formatInfo("No custom variables defined. Use 'servherd config --add <name> --value <value>' to add one.");
+    }
+
+    lines.push(chalk.bold.cyan("Custom Template Variables"));
+    lines.push("");
+
+    const table = new Table({
+      head: [chalk.bold("Variable"), chalk.bold("Value")],
+      style: { head: [], border: [] },
+    });
+
+    for (const [name, value] of Object.entries(vars)) {
+      table.push([`{{${name}}}`, value]);
+    }
+
+    lines.push(table.toString());
+    return lines.join("\n");
+  }
+
+  // Handle --add
+  if (result.addedVar !== undefined) {
+    if (result.addedVar) {
+      return formatSuccess(`Variable "{{${result.varName}}}" set to "${result.varValue}"`);
+    }
+    return formatError(result.error || "Failed to add variable");
+  }
+
+  // Handle --remove
+  if (result.removedVar !== undefined) {
+    if (result.removedVar) {
+      return formatSuccess(`Variable "{{${result.varName}}}" removed`);
+    }
+    return formatError(result.error || "Failed to remove variable");
   }
 
   // Handle --get

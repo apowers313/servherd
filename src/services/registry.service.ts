@@ -109,9 +109,18 @@ export class RegistryService {
 
   /**
    * Find server by cwd and command (for detecting duplicate registrations)
+   * @deprecated Use findByCwdAndName for the new identity model
    */
   findByCommandHash(cwd: string, command: string): ServerEntry | undefined {
     return this.registry.servers.find((s) => s.cwd === cwd && s.command === command);
+  }
+
+  /**
+   * Find server by cwd and name (new identity model)
+   * Server identity is now based on cwd + name rather than cwd + command
+   */
+  findByCwdAndName(cwd: string, name: string): ServerEntry | undefined {
+    return this.registry.servers.find((s) => s.cwd === cwd && s.name === name);
   }
 
   /**

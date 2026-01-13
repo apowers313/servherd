@@ -32,6 +32,7 @@ export const GlobalConfigSchema = z.object({
   httpsCert: z.string().optional(),
   httpsKey: z.string().optional(),
   refreshOnChange: RefreshOnChangeSchema.optional(),
+  variables: z.record(z.string(), z.string()).optional(),
 });
 
 export type PortRange = z.infer<typeof PortRangeSchema>;
@@ -51,4 +52,5 @@ export const DEFAULT_CONFIG: GlobalConfig = {
   httpsCert: undefined,
   httpsKey: undefined,
   refreshOnChange: "on-start",
+  variables: {},
 };

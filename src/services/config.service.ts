@@ -1,5 +1,6 @@
 import { cosmiconfig, type CosmiconfigResult } from "cosmiconfig";
 import { ensureDir, writeJson } from "fs-extra/esm";
+import { chmod } from "fs/promises";
 import * as path from "path";
 import * as os from "os";
 import { DEFAULT_CONFIG, GlobalConfigSchema, type GlobalConfig } from "../types/config.js";
@@ -138,10 +139,15 @@ export class ConfigService {
 
   /**
    * Save configuration to the global config file
+   * Sets file permissions to 600 (owner read/write only) to protect sensitive data
    */
   async save(config: GlobalConfig): Promise<void> {
     await ensureDir(this.globalConfigDir);
+    // Set directory permissions to 700 (owner only)
+    await chmod(this.globalConfigDir, 0o700);
     await writeJson(this.globalConfigPath, config, { spaces: 2 });
+    // Set file permissions to 600 (owner read/write only) to protect secrets
+    await chmod(this.globalConfigPath, 0o600);
     this.config = config;
   }
 

@@ -111,6 +111,9 @@ export function getTemplateVariables(
   port: number,
 ): TemplateVariables {
   return {
+    // User-defined custom variables (spread first so built-ins take precedence)
+    ...(config.variables ?? {}),
+    // Built-in variables
     port,
     hostname: config.hostname,
     url: `${config.protocol}://${config.hostname}:${port}`,
@@ -130,6 +133,23 @@ export const TEMPLATE_VAR_TO_CONFIG_KEY: Record<string, keyof GlobalConfig | nul
   "https-cert": "httpsCert",
   "https-key": "httpsKey",
 };
+
+/**
+ * Config keys that affect servers implicitly (not via template variables)
+ * These are always tracked in the config snapshot
+ */
+export const IMPLICIT_CONFIG_DEPENDENCIES = {
+  portRange: true,   // Affects all servers - port must be in range
+  protocol: true,    // Affects servers using {{url}} - changes the URL scheme
+} as const;
+
+/**
+ * Check if a command template uses the {{url}} variable
+ * Servers using {{url}} implicitly depend on protocol
+ */
+export function usesUrlVariable(command: string): boolean {
+  return extractVariables(command).includes("url");
+}
 
 /**
  * Human-readable prompts for each configurable template variable
@@ -152,6 +172,8 @@ export interface MissingVariable {
   prompt: string;
   /** Whether this variable can be configured by the user */
   configurable: boolean;
+  /** Whether this is a custom user-defined variable */
+  isCustomVar: boolean;
 }
 
 /**
@@ -173,14 +195,17 @@ export function findMissingVariables(
     // Check if the value is empty, undefined, or an empty string
     if (value === undefined || value === "" || value === null) {
       const configKey = TEMPLATE_VAR_TO_CONFIG_KEY[varName] ?? null;
+      const isBuiltIn = varName in TEMPLATE_VAR_TO_CONFIG_KEY;
       const configurable = configKey !== null;
+      const isCustomVar = !isBuiltIn;
       const prompt = TEMPLATE_VAR_PROMPTS[varName] ?? `Value for ${varName}:`;
 
       missing.push({
         templateVar: varName,
         configKey,
         prompt,
-        configurable,
+        configurable: configurable || isCustomVar, // Custom vars are always configurable via --add
+        isCustomVar,
       });
     }
   }
@@ -204,7 +229,9 @@ export function formatMissingVariablesError(missing: MissingVariable[]): string 
   ];
 
   for (const v of missing) {
-    if (v.configurable) {
+    if (v.isCustomVar) {
+      lines.push(`  {{${v.templateVar}}} - Add with: servherd config --add ${v.templateVar} --value <value>`);
+    } else if (v.configurable) {
       lines.push(`  {{${v.templateVar}}} - Set with: servherd config --set ${v.configKey} --value <value>`);
     } else {
       lines.push(`  {{${v.templateVar}}} - This variable is auto-generated and cannot be configured directly`);
@@ -237,7 +264,11 @@ export function formatMissingVariablesForMCP(missing: MissingVariable[]): string
   ];
 
   for (const v of configurable) {
-    lines.push(`  - {{${v.templateVar}}}: Use servherd_config tool with set="${v.configKey}" and value="<path or value>"`);
+    if (v.isCustomVar) {
+      lines.push(`  - {{${v.templateVar}}}: Use servherd_config tool with add="${v.templateVar}" and addValue="<value>"`);
+    } else {
+      lines.push(`  - {{${v.templateVar}}}: Use servherd_config tool with set="${v.configKey}" and value="<path or value>"`);
+    }
   }
 
   lines.push("");

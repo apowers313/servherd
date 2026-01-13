@@ -5,7 +5,7 @@
 
 import type { GlobalConfig } from "../types/config.js";
 import type { ServerEntry, ConfigSnapshot } from "../types/registry.js";
-import { extractVariables, TEMPLATE_VAR_TO_CONFIG_KEY } from "./template.js";
+import { extractVariables, TEMPLATE_VAR_TO_CONFIG_KEY, usesUrlVariable } from "./template.js";
 
 /**
  * Information about a drifted config value
@@ -29,17 +29,22 @@ export interface DriftResult {
   hasDrift: boolean;
   /** List of drifted values */
   driftedValues: DriftedValue[];
+  /** Whether the server's port is outside the current port range */
+  portOutOfRange?: boolean;
+  /** Whether the protocol has changed (affects servers using {{url}}) */
+  protocolChanged?: boolean;
 }
 
 /**
  * Extract the config keys used by a command template
  * @param command - The command template string
- * @returns Array of config keys used (e.g., ["hostname", "httpsCert"])
+ * @returns Array of config keys used (e.g., ["hostname", "httpsCert", "portRange"])
  */
 export function extractUsedConfigKeys(command: string): string[] {
   const templateVars = extractVariables(command);
   const configKeys: string[] = [];
 
+  // Explicit template variable dependencies
   for (const varName of templateVars) {
     const configKey = TEMPLATE_VAR_TO_CONFIG_KEY[varName];
     if (configKey) {
@@ -47,18 +52,44 @@ export function extractUsedConfigKeys(command: string): string[] {
     }
   }
 
+  // Implicit dependencies - all servers depend on portRange
+  configKeys.push("portRange");
+
+  // Servers using {{url}} implicitly depend on protocol
+  if (usesUrlVariable(command)) {
+    configKeys.push("protocol");
+  }
+
   return [...new Set(configKeys)]; // Deduplicate
+}
+
+/**
+ * Extract custom variable names used in a command template
+ * @param command - The command template string
+ * @param config - Current global config (to identify which vars are custom)
+ * @returns Array of custom variable names used
+ */
+export function extractUsedCustomVariables(
+  command: string,
+  config: GlobalConfig,
+): string[] {
+  const templateVars = extractVariables(command);
+  const customVarNames = Object.keys(config.variables ?? {});
+
+  return templateVars.filter(v => customVarNames.includes(v));
 }
 
 /**
  * Create a config snapshot containing only the values used by a server
  * @param config - Current global config
  * @param usedConfigKeys - Config keys used by the server
+ * @param command - The command template (needed for custom variable extraction)
  * @returns Config snapshot with only relevant values
  */
 export function createConfigSnapshot(
   config: GlobalConfig,
   usedConfigKeys: string[],
+  command: string,
 ): ConfigSnapshot {
   const snapshot: ConfigSnapshot = {};
 
@@ -69,6 +100,20 @@ export function createConfigSnapshot(
       snapshot.httpsCert = config.httpsCert;
     } else if (key === "httpsKey") {
       snapshot.httpsKey = config.httpsKey;
+    } else if (key === "protocol") {
+      snapshot.protocol = config.protocol;
+    } else if (key === "portRange") {
+      snapshot.portRangeMin = config.portRange.min;
+      snapshot.portRangeMax = config.portRange.max;
+    }
+  }
+
+  // Capture custom variables used in command
+  const usedCustomVars = extractUsedCustomVariables(command, config);
+  if (usedCustomVars.length > 0) {
+    snapshot.customVariables = {};
+    for (const varName of usedCustomVars) {
+      snapshot.customVariables[varName] = config.variables?.[varName] ?? "";
     }
   }
 
@@ -86,6 +131,8 @@ export function detectDrift(
   currentConfig: GlobalConfig,
 ): DriftResult {
   const driftedValues: DriftedValue[] = [];
+  let portOutOfRange = false;
+  let protocolChanged = false;
 
   // If no snapshot exists, we can't detect drift
   if (!server.configSnapshot || !server.usedConfigKeys) {
@@ -109,6 +156,30 @@ export function detectDrift(
       startedWith = server.configSnapshot.httpsKey;
       currentValue = currentConfig.httpsKey;
       templateVar = "https-key";
+    } else if (configKey === "protocol") {
+      startedWith = server.configSnapshot.protocol;
+      currentValue = currentConfig.protocol;
+      templateVar = "protocol (via url)";
+      if (startedWith !== undefined && startedWith !== currentValue) {
+        protocolChanged = true;
+      }
+    } else if (configKey === "portRange") {
+      // Special handling: check if current port is still in range
+      const min = currentConfig.portRange.min;
+      const max = currentConfig.portRange.max;
+      // Only check if we have snapshot values (backward compatibility)
+      if (server.configSnapshot.portRangeMin !== undefined) {
+        if (server.port < min || server.port > max) {
+          portOutOfRange = true;
+          driftedValues.push({
+            configKey: "portRange",
+            templateVar: "port",
+            startedWith: `${server.configSnapshot.portRangeMin}-${server.configSnapshot.portRangeMax}`,
+            currentValue: `${min}-${max} (port ${server.port} out of range)`,
+          });
+        }
+      }
+      continue; // Skip the standard comparison below
     }
 
     if (templateVar && startedWith !== currentValue) {
@@ -121,9 +192,26 @@ export function detectDrift(
     }
   }
 
+  // Check custom variables drift
+  if (server.configSnapshot.customVariables) {
+    for (const [varName, startedWith] of Object.entries(server.configSnapshot.customVariables)) {
+      const currentValue = currentConfig.variables?.[varName];
+      if (startedWith !== currentValue) {
+        driftedValues.push({
+          configKey: `variables.${varName}`,
+          templateVar: varName,
+          startedWith,
+          currentValue,
+        });
+      }
+    }
+  }
+
   return {
     hasDrift: driftedValues.length > 0,
     driftedValues,
+    portOutOfRange,
+    protocolChanged,
   };
 }
 

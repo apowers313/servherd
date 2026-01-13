@@ -7,9 +7,16 @@ export const ServerStatusSchema = z.enum(["online", "stopped", "errored", "unkno
  * Used to detect config drift.
  */
 export const ConfigSnapshotSchema = z.object({
+  // Template variable dependencies
   hostname: z.string().optional(),
   httpsCert: z.string().optional(),
   httpsKey: z.string().optional(),
+  // Implicit dependencies (affect servers even without template vars)
+  protocol: z.enum(["http", "https"]).optional(),
+  portRangeMin: z.number().optional(),
+  portRangeMax: z.number().optional(),
+  // Custom variables snapshot (dynamic keys)
+  customVariables: z.record(z.string(), z.string()).optional(),
 });
 
 export type ConfigSnapshot = z.infer<typeof ConfigSnapshotSchema>;

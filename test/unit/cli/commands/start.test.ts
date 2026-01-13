@@ -19,6 +19,7 @@ const mockRegistryService = {
   load: vi.fn(),
   addServer: vi.fn(),
   findByCommandHash: vi.fn(),
+  findByCwdAndName: vi.fn(),
   findByName: vi.fn(),
   updateServer: vi.fn(),
   listServers: vi.fn(),
@@ -56,6 +57,7 @@ describe("start command", () => {
 
     // Setup default registry mock
     mockRegistryService.load.mockResolvedValue({ version: "1", servers: [] });
+    mockRegistryService.findByCwdAndName.mockReturnValue(undefined);
     mockRegistryService.findByCommandHash.mockReturnValue(undefined);
     mockRegistryService.findByName.mockReturnValue(undefined);
     mockRegistryService.listServers.mockReturnValue([]);
@@ -320,30 +322,26 @@ describe("start command", () => {
         pm2Name: "servherd-old-name",
       };
 
+      // With new identity model: explicit -n looks up by cwd+name, not command hash
+      // Since no server exists with name "new-name", a new server is created
+      // (The old server with name "old-name" becomes orphaned)
+      mockRegistryService.findByCwdAndName.mockReturnValue(undefined);
       mockRegistryService.findByCommandHash.mockReturnValue(existingServer);
-      mockPM2._setProcesses([
-        {
-          pid: 12345,
-          name: "servherd-old-name",
-          pm2_env: {
-            status: "online",
-            pm_id: 0,
-            name: "servherd-old-name",
-            pm_uptime: Date.now(),
-            created_at: Date.now(),
-            restart_time: 0,
-            unstable_restarts: 0,
-            pm_cwd: "/project",
-            pm_exec_path: "npm",
-            exec_mode: "fork",
-            node_args: [],
-            pm_out_log_path: "",
-            pm_err_log_path: "",
-            pm_pid_path: "",
-            env: {},
-          },
-        },
-      ]);
+
+      const newServer: ServerEntry = {
+        id: "new-id",
+        name: "new-name",
+        command: "npm start",
+        resolvedCommand: "npm start",
+        cwd: "/project",
+        port: 3456,
+        protocol: "http",
+        hostname: "localhost",
+        env: {},
+        createdAt: new Date().toISOString(),
+        pm2Name: "servherd-new-name",
+      };
+      mockRegistryService.addServer.mockResolvedValue(newServer);
 
       const result = await executeStart({
         command: "npm start",
@@ -351,19 +349,14 @@ describe("start command", () => {
         name: "new-name",
       });
 
-      expect(result.action).toBe("renamed");
-      expect(result.previousName).toBe("old-name");
+      // New behavior: creates a new server with the specified name
+      expect(result.action).toBe("started");
       expect(result.server.name).toBe("new-name");
-      expect(result.server.pm2Name).toBe("servherd-new-name");
-      expect(mockPM2.delete).toHaveBeenCalledWith("servherd-old-name", expect.any(Function));
-      expect(mockRegistryService.updateServer).toHaveBeenCalledWith("existing-id", {
-        name: "new-name",
-        pm2Name: "servherd-new-name",
-      });
+      expect(mockRegistryService.addServer).toHaveBeenCalled();
       expect(mockPM2.start).toHaveBeenCalled();
     });
 
-    it("should not rename when name matches existing server", async () => {
+    it("should reuse existing server when name matches", async () => {
       const existingServer: ServerEntry = {
         id: "existing-id",
         name: "same-name",
@@ -378,7 +371,8 @@ describe("start command", () => {
         pm2Name: "servherd-same-name",
       };
 
-      mockRegistryService.findByCommandHash.mockReturnValue(existingServer);
+      // With new identity model: explicit -n looks up by cwd+name
+      mockRegistryService.findByCwdAndName.mockReturnValue(existingServer);
       mockPM2._setProcesses([
         {
           pid: 12345,
@@ -462,6 +456,216 @@ describe("start command", () => {
           port: 99999,
         }),
       ).rejects.toThrow("Port 99999 is outside configured range 3000-9999");
+    });
+  });
+
+  describe("environment variable changes", () => {
+    it("should restart online server when env variables change", async () => {
+      const existingServer: ServerEntry = {
+        id: "existing-id",
+        name: "env-server",
+        command: "npm start",
+        resolvedCommand: "npm start",
+        cwd: "/project",
+        port: 3456,
+        protocol: "http",
+        hostname: "localhost",
+        env: { API_URL: "http://localhost:3000" },
+        createdAt: new Date().toISOString(),
+        pm2Name: "servherd-env-server",
+      };
+
+      mockRegistryService.findByCommandHash.mockReturnValue(existingServer);
+      mockPM2._setProcesses([
+        {
+          pid: 12345,
+          name: "servherd-env-server",
+          pm2_env: {
+            status: "online",
+            pm_id: 0,
+            name: "servherd-env-server",
+            pm_uptime: Date.now(),
+            created_at: Date.now(),
+            restart_time: 0,
+            unstable_restarts: 0,
+            pm_cwd: "/project",
+            pm_exec_path: "npm",
+            exec_mode: "fork",
+            node_args: [],
+            pm_out_log_path: "",
+            pm_err_log_path: "",
+            pm_pid_path: "",
+            env: {},
+          },
+        },
+      ]);
+
+      const result = await executeStart({
+        command: "npm start",
+        cwd: "/project",
+        env: { API_URL: "http://localhost:4000" }, // Different value
+      });
+
+      expect(result.action).toBe("restarted");
+      expect(result.envChanged).toBe(true);
+      expect(mockPM2.delete).toHaveBeenCalledWith("servherd-env-server", expect.any(Function));
+      expect(mockPM2.start).toHaveBeenCalled();
+      expect(mockRegistryService.updateServer).toHaveBeenCalledWith("existing-id",
+        expect.objectContaining({
+          env: { API_URL: "http://localhost:4000" },
+        }),
+      );
+    });
+
+    it("should restart when adding new env variables", async () => {
+      const existingServer: ServerEntry = {
+        id: "existing-id",
+        name: "env-server",
+        command: "npm start",
+        resolvedCommand: "npm start",
+        cwd: "/project",
+        port: 3456,
+        protocol: "http",
+        hostname: "localhost",
+        env: {},
+        createdAt: new Date().toISOString(),
+        pm2Name: "servherd-env-server",
+      };
+
+      mockRegistryService.findByCommandHash.mockReturnValue(existingServer);
+      mockPM2._setProcesses([
+        {
+          pid: 12345,
+          name: "servherd-env-server",
+          pm2_env: {
+            status: "online",
+            pm_id: 0,
+            name: "servherd-env-server",
+            pm_uptime: Date.now(),
+            created_at: Date.now(),
+            restart_time: 0,
+            unstable_restarts: 0,
+            pm_cwd: "/project",
+            pm_exec_path: "npm",
+            exec_mode: "fork",
+            node_args: [],
+            pm_out_log_path: "",
+            pm_err_log_path: "",
+            pm_pid_path: "",
+            env: {},
+          },
+        },
+      ]);
+
+      const result = await executeStart({
+        command: "npm start",
+        cwd: "/project",
+        env: { NEW_VAR: "value" },
+      });
+
+      expect(result.action).toBe("restarted");
+      expect(result.envChanged).toBe(true);
+    });
+
+    it("should restart when removing env variables", async () => {
+      const existingServer: ServerEntry = {
+        id: "existing-id",
+        name: "env-server",
+        command: "npm start",
+        resolvedCommand: "npm start",
+        cwd: "/project",
+        port: 3456,
+        protocol: "http",
+        hostname: "localhost",
+        env: { OLD_VAR: "value" },
+        createdAt: new Date().toISOString(),
+        pm2Name: "servherd-env-server",
+      };
+
+      mockRegistryService.findByCommandHash.mockReturnValue(existingServer);
+      mockPM2._setProcesses([
+        {
+          pid: 12345,
+          name: "servherd-env-server",
+          pm2_env: {
+            status: "online",
+            pm_id: 0,
+            name: "servherd-env-server",
+            pm_uptime: Date.now(),
+            created_at: Date.now(),
+            restart_time: 0,
+            unstable_restarts: 0,
+            pm_cwd: "/project",
+            pm_exec_path: "npm",
+            exec_mode: "fork",
+            node_args: [],
+            pm_out_log_path: "",
+            pm_err_log_path: "",
+            pm_pid_path: "",
+            env: {},
+          },
+        },
+      ]);
+
+      const result = await executeStart({
+        command: "npm start",
+        cwd: "/project",
+        // No env specified - should detect removal of OLD_VAR
+      });
+
+      expect(result.action).toBe("restarted");
+      expect(result.envChanged).toBe(true);
+      expect(result.server.env).toEqual({});
+    });
+
+    it("should not restart when env variables are the same", async () => {
+      const existingServer: ServerEntry = {
+        id: "existing-id",
+        name: "env-server",
+        command: "npm start",
+        resolvedCommand: "npm start",
+        cwd: "/project",
+        port: 3456,
+        protocol: "http",
+        hostname: "localhost",
+        env: { API_URL: "http://localhost:3000" },
+        createdAt: new Date().toISOString(),
+        pm2Name: "servherd-env-server",
+      };
+
+      mockRegistryService.findByCommandHash.mockReturnValue(existingServer);
+      mockPM2._setProcesses([
+        {
+          pid: 12345,
+          name: "servherd-env-server",
+          pm2_env: {
+            status: "online",
+            pm_id: 0,
+            name: "servherd-env-server",
+            pm_uptime: Date.now(),
+            created_at: Date.now(),
+            restart_time: 0,
+            unstable_restarts: 0,
+            pm_cwd: "/project",
+            pm_exec_path: "npm",
+            exec_mode: "fork",
+            node_args: [],
+            pm_out_log_path: "",
+            pm_err_log_path: "",
+            pm_pid_path: "",
+            env: {},
+          },
+        },
+      ]);
+
+      const result = await executeStart({
+        command: "npm start",
+        cwd: "/project",
+        env: { API_URL: "http://localhost:3000" }, // Same value
+      });
+
+      expect(result.action).toBe("existing");
+      expect(result.envChanged).toBeUndefined();
     });
   });
 

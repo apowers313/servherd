@@ -19,6 +19,7 @@ const mockRegistryService = {
   load: vi.fn(),
   addServer: vi.fn(),
   findByCommandHash: vi.fn(),
+  findByCwdAndName: vi.fn(),
   findByName: vi.fn(),
   updateServer: vi.fn(),
   listServers: vi.fn(),
@@ -57,6 +58,7 @@ describe("servherd_start MCP tool", () => {
 
     // Setup default registry mock
     mockRegistryService.load.mockResolvedValue({ version: "1", servers: [] });
+    mockRegistryService.findByCwdAndName.mockReturnValue(undefined);
     mockRegistryService.findByCommandHash.mockReturnValue(undefined);
     mockRegistryService.findByName.mockReturnValue(undefined);
     mockRegistryService.listServers.mockReturnValue([]);

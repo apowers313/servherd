@@ -282,6 +282,68 @@ describe("TemplateEngine", () => {
       expect(vars.url).toBe("http://myserver.local:9000");
       expect(vars.hostname).toBe("myserver.local");
     });
+
+    it("should include custom variables from config", () => {
+      const configWithVars = {
+        ...baseConfig,
+        variables: {
+          "my-token": "secret123",
+          "api-key": "abc456",
+        },
+      };
+      const vars = getTemplateVariables(configWithVars, 8080);
+
+      expect(vars["my-token"]).toBe("secret123");
+      expect(vars["api-key"]).toBe("abc456");
+    });
+
+    it("should render custom variables in templates", () => {
+      const configWithVars = {
+        ...baseConfig,
+        variables: { "auth-token": "bearer-xyz" },
+      };
+      const vars = getTemplateVariables(configWithVars, 8080);
+      const result = renderTemplate("--token {{auth-token}}", vars);
+
+      expect(result).toBe("--token bearer-xyz");
+    });
+
+    it("should allow built-in variables to take precedence over custom variables", () => {
+      // This tests that if somehow a custom var with reserved name got through,
+      // the built-in would still win
+      const configWithVars = {
+        ...baseConfig,
+        variables: {
+          "port": "9999", // Should not override built-in port
+        },
+      };
+      const vars = getTemplateVariables(configWithVars, 8080);
+
+      // Built-in port should take precedence
+      expect(vars.port).toBe(8080);
+    });
+
+    it("should handle empty variables object", () => {
+      const configWithEmptyVars = {
+        ...baseConfig,
+        variables: {},
+      };
+      const vars = getTemplateVariables(configWithEmptyVars, 8080);
+
+      expect(vars.port).toBe(8080);
+      expect(vars.hostname).toBe("localhost");
+    });
+
+    it("should handle undefined variables", () => {
+      const configWithoutVars = {
+        ...baseConfig,
+        variables: undefined,
+      };
+      const vars = getTemplateVariables(configWithoutVars, 8080);
+
+      expect(vars.port).toBe(8080);
+      expect(vars.hostname).toBe("localhost");
+    });
   });
 
   describe("findMissingVariables", () => {
@@ -373,6 +435,40 @@ describe("TemplateEngine", () => {
       expect(missing).toHaveLength(1);
       expect(missing[0].templateVar).toBe("https-cert");
     });
+
+    it("should detect missing custom variable as isCustomVar", () => {
+      const missing = findMissingVariables("--token {{my-custom-token}}", {});
+
+      expect(missing).toHaveLength(1);
+      expect(missing[0].templateVar).toBe("my-custom-token");
+      expect(missing[0].isCustomVar).toBe(true);
+      expect(missing[0].configurable).toBe(true);
+      expect(missing[0].configKey).toBeNull();
+    });
+
+    it("should not flag custom variable as missing when it has a value", () => {
+      const missing = findMissingVariables("--token {{my-token}}", {
+        "my-token": "secret123",
+      });
+
+      expect(missing).toEqual([]);
+    });
+
+    it("should detect built-in variables as not custom", () => {
+      const missing = findMissingVariables("--host {{hostname}}", {
+        hostname: "",
+      });
+
+      expect(missing).toHaveLength(1);
+      expect(missing[0].isCustomVar).toBe(false);
+    });
+
+    it("should detect multiple custom variables", () => {
+      const missing = findMissingVariables("--token {{api-token}} --key {{api-key}}", {});
+
+      expect(missing).toHaveLength(2);
+      expect(missing.every(m => m.isCustomVar)).toBe(true);
+    });
   });
 
   describe("formatMissingVariablesError", () => {
@@ -387,6 +483,7 @@ describe("TemplateEngine", () => {
         configKey: "httpsCert" as const,
         prompt: "Path to HTTPS certificate file:",
         configurable: true,
+        isCustomVar: false,
       }];
 
       const result = formatMissingVariablesError(missing);
@@ -401,6 +498,7 @@ describe("TemplateEngine", () => {
         configKey: null,
         prompt: "Port:",
         configurable: false,
+        isCustomVar: false,
       }];
 
       const result = formatMissingVariablesError(missing);
@@ -416,12 +514,14 @@ describe("TemplateEngine", () => {
           configKey: "httpsCert" as const,
           prompt: "Path to HTTPS certificate file:",
           configurable: true,
+          isCustomVar: false,
         },
         {
           templateVar: "https-key",
           configKey: "httpsKey" as const,
           prompt: "Path to HTTPS key file:",
           configurable: true,
+          isCustomVar: false,
         },
       ];
 
@@ -429,6 +529,45 @@ describe("TemplateEngine", () => {
 
       expect(result).toContain("{{https-cert}}");
       expect(result).toContain("{{https-key}}");
+    });
+
+    it("should format custom variable with --add command", () => {
+      const missing = [{
+        templateVar: "my-api-token",
+        configKey: null,
+        prompt: "Value for my-api-token:",
+        configurable: true,
+        isCustomVar: true,
+      }];
+
+      const result = formatMissingVariablesError(missing);
+
+      expect(result).toContain("{{my-api-token}}");
+      expect(result).toContain("servherd config --add my-api-token --value");
+    });
+
+    it("should distinguish between built-in and custom variables", () => {
+      const missing = [
+        {
+          templateVar: "https-cert",
+          configKey: "httpsCert" as const,
+          prompt: "Path to HTTPS certificate file:",
+          configurable: true,
+          isCustomVar: false,
+        },
+        {
+          templateVar: "my-token",
+          configKey: null,
+          prompt: "Value for my-token:",
+          configurable: true,
+          isCustomVar: true,
+        },
+      ];
+
+      const result = formatMissingVariablesError(missing);
+
+      expect(result).toContain("--set httpsCert");
+      expect(result).toContain("--add my-token");
     });
   });
 
@@ -444,6 +583,7 @@ describe("TemplateEngine", () => {
         configKey: "httpsCert" as const,
         prompt: "Path to HTTPS certificate file:",
         configurable: true,
+        isCustomVar: false,
       }];
 
       const result = formatMissingVariablesForMCP(missing);
@@ -460,6 +600,7 @@ describe("TemplateEngine", () => {
         configKey: "httpsCert" as const,
         prompt: "Path to HTTPS certificate file:",
         configurable: true,
+        isCustomVar: false,
       }];
 
       const result = formatMissingVariablesForMCP(missing);
@@ -474,6 +615,7 @@ describe("TemplateEngine", () => {
         configKey: null,
         prompt: "Port:",
         configurable: false,
+        isCustomVar: false,
       }];
 
       const result = formatMissingVariablesForMCP(missing);
@@ -489,12 +631,14 @@ describe("TemplateEngine", () => {
           configKey: "httpsCert" as const,
           prompt: "Path to HTTPS certificate file:",
           configurable: true,
+          isCustomVar: false,
         },
         {
           templateVar: "https-key",
           configKey: "httpsKey" as const,
           prompt: "Path to HTTPS key file:",
           configurable: true,
+          isCustomVar: false,
         },
       ];
 
@@ -504,6 +648,46 @@ describe("TemplateEngine", () => {
       expect(result).toContain("{{https-key}}");
       expect(result).toContain("set=\"httpsCert\"");
       expect(result).toContain("set=\"httpsKey\"");
+    });
+
+    it("should format custom variable with add parameter for MCP", () => {
+      const missing = [{
+        templateVar: "my-api-token",
+        configKey: null,
+        prompt: "Value for my-api-token:",
+        configurable: true,
+        isCustomVar: true,
+      }];
+
+      const result = formatMissingVariablesForMCP(missing);
+
+      expect(result).toContain("{{my-api-token}}");
+      expect(result).toContain("add=\"my-api-token\"");
+      expect(result).toContain("addValue=");
+    });
+
+    it("should distinguish between built-in and custom variables for MCP", () => {
+      const missing = [
+        {
+          templateVar: "https-cert",
+          configKey: "httpsCert" as const,
+          prompt: "Path to HTTPS certificate file:",
+          configurable: true,
+          isCustomVar: false,
+        },
+        {
+          templateVar: "my-token",
+          configKey: null,
+          prompt: "Value for my-token:",
+          configurable: true,
+          isCustomVar: true,
+        },
+      ];
+
+      const result = formatMissingVariablesForMCP(missing);
+
+      expect(result).toContain("set=\"httpsCert\"");
+      expect(result).toContain("add=\"my-token\"");
     });
   });
 });

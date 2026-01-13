@@ -1,4 +1,4 @@
-import { input } from "@inquirer/prompts";
+import { input, confirm } from "@inquirer/prompts";
 import { ConfigService } from "../../services/config.service.js";
 import { RegistryService } from "../../services/registry.service.js";
 import { PortService } from "../../services/port.service.js";
@@ -11,11 +11,17 @@ import {
   getTemplateVariables,
   formatMissingVariablesError,
   type MissingVariable,
+  type TemplateVariables,
 } from "../../utils/template.js";
 import {
   extractUsedConfigKeys,
   createConfigSnapshot,
+  detectDrift,
+  formatDrift,
+  type DriftResult,
 } from "../../utils/config-drift.js";
+import { hasEnvChanged } from "../../utils/env-compare.js";
+import { generateDeterministicName } from "../../utils/names.js";
 import type { GlobalConfig } from "../../types/config.js";
 import type { ServerEntry, ServerStatus } from "../../types/registry.js";
 import { formatStartResult } from "../output/formatters.js";
@@ -36,12 +42,21 @@ export interface StartCommandOptions {
 }
 
 export interface StartCommandResult {
-  action: "started" | "existing" | "restarted" | "renamed";
+  action: "started" | "existing" | "restarted" | "renamed" | "refreshed";
   server: ServerEntry;
   status: ServerStatus;
   portReassigned?: boolean;
   originalPort?: number;
   previousName?: string;
+  envChanged?: boolean;
+  /** Whether the command was changed (with explicit -n) */
+  commandChanged?: boolean;
+  /** Whether config drift was detected and applied */
+  configDrift?: boolean;
+  /** Details of config drift that was applied */
+  driftDetails?: string[];
+  /** User declined refresh when prompted */
+  userDeclinedRefresh?: boolean;
 }
 
 /**
@@ -62,60 +77,142 @@ export async function executeStart(options: StartCommandOptions): Promise<StartC
 
     const cwd = options.cwd || process.cwd();
 
-    // Check if server already exists
-    const existingServer = registryService.findByCommandHash(cwd, options.command);
+    // Determine server name for identity lookup
+    // New identity model: server identity = cwd + name
+    let serverName: string;
+    let isExplicitName = false;
+
+    if (options.name) {
+      // User provided explicit name - identity is cwd + provided name
+      serverName = options.name;
+      isExplicitName = true;
+    } else {
+      // Generate deterministic name from command + env (UNRESOLVED values)
+      serverName = generateDeterministicName(options.command, options.env);
+    }
+
+    // Primary lookup: cwd + name (new identity model)
+    let existingServer = registryService.findByCwdAndName(cwd, serverName);
+
+    // Fallback for backward compatibility with legacy servers
+    // Legacy servers may have been created with random names, matched by command hash
+    if (!existingServer && !isExplicitName) {
+      existingServer = registryService.findByCommandHash(cwd, options.command);
+    }
 
     if (existingServer) {
-      // Check if user wants to rename the server
-      const shouldRename = options.name && options.name !== existingServer.name;
+      // Check if command has changed (only relevant with explicit -n)
+      const commandChanged = isExplicitName && existingServer.command !== options.command;
 
-      if (shouldRename) {
-        // Rename the server
-        const previousName = existingServer.name;
-        const newName = options.name!;
-        const newPm2Name = `servherd-${newName}`;
+      // Check for config drift before checking status
+      const drift = detectDrift(existingServer, config);
 
-        // Delete the old PM2 process (if it exists)
+      if (drift.hasDrift) {
+        const refreshOnChange = config.refreshOnChange ?? "on-start";
+
+        if (refreshOnChange === "prompt") {
+          // Ask user
+          console.log("\n" + formatDrift(drift));
+          const shouldRefresh = await confirm({
+            message: "Configuration has changed. Refresh server with new settings?",
+            default: true,
+          });
+
+          if (shouldRefresh) {
+            return await handleDriftRefresh(
+              existingServer, config, drift, processService, registryService, options, commandChanged,
+            );
+          }
+          // User declined - continue with normal flow but mark it
+        } else if (refreshOnChange === "on-start" || refreshOnChange === "auto") {
+          // Auto-refresh
+          return await handleDriftRefresh(
+            existingServer, config, drift, processService, registryService, options, commandChanged,
+          );
+        }
+        // refreshOnChange === "manual" - don't auto-refresh, continue with normal flow
+      }
+
+      // Server exists - check its status
+      const status = await processService.getStatus(existingServer.pm2Name);
+
+      // Check if environment variables have changed
+      const templateVars = buildTemplateVars(config, existingServer.port, existingServer.hostname, existingServer.protocol);
+      const resolvedEnv = options.env
+        ? renderEnvTemplates(options.env, templateVars)
+        : undefined;
+      const envChanged = hasEnvChanged(existingServer.env, resolvedEnv);
+
+      if (status === "online" && !envChanged && !commandChanged) {
+        // Already running with same config
+        return {
+          action: "existing",
+          server: existingServer,
+          status: "online",
+          userDeclinedRefresh: drift.hasDrift, // If we got here with drift, user declined
+        };
+      }
+
+      // Command changed, env changed, or server stopped/errored - need to restart
+      if (commandChanged || envChanged) {
+        // Build template vars for re-resolving command
+        const newTemplateVars = {
+          ...(config.variables ?? {}),
+          port: existingServer.port,
+          hostname: existingServer.hostname,
+          url: `${existingServer.protocol}://${existingServer.hostname}:${existingServer.port}`,
+          "https-cert": config.httpsCert ?? "",
+          "https-key": config.httpsKey ?? "",
+        };
+
+        // Re-resolve command if it changed
+        const newCommand = commandChanged ? options.command : existingServer.command;
+        const newResolvedCommand = renderTemplate(newCommand, newTemplateVars);
+
+        // Re-extract used config keys and create snapshot
+        const usedConfigKeys = extractUsedConfigKeys(newCommand);
+        const configSnapshot = createConfigSnapshot(config, usedConfigKeys, newCommand);
+
+        // Update the registry (undefined env means "clear env", use empty object)
+        await registryService.updateServer(existingServer.id, {
+          command: newCommand,
+          resolvedCommand: newResolvedCommand,
+          env: resolvedEnv ?? {},
+          usedConfigKeys,
+          configSnapshot,
+        });
+
+        // Delete the old PM2 process to ensure fresh start
         try {
           await processService.delete(existingServer.pm2Name);
         } catch {
           // Process might not exist in PM2, that's okay
         }
 
-        // Update the registry with new name
-        await registryService.updateServer(existingServer.id, {
-          name: newName,
-          pm2Name: newPm2Name,
-        });
-
-        const renamedServer: ServerEntry = {
+        const updatedServer: ServerEntry = {
           ...existingServer,
-          name: newName,
-          pm2Name: newPm2Name,
+          command: newCommand,
+          resolvedCommand: newResolvedCommand,
+          env: resolvedEnv ?? {},
+          usedConfigKeys,
+          configSnapshot,
         };
 
-        // Start the process with the new name
-        await startProcess(processService, renamedServer);
+        // Start with new config
+        await startProcess(processService, updatedServer);
 
-        logger.info({ previousName, newName }, "Server renamed");
+        if (commandChanged) {
+          logger.info({ serverName: existingServer.name }, "Server restarted due to command change");
+        } else {
+          logger.info({ serverName: existingServer.name }, "Server restarted due to environment change");
+        }
 
         return {
-          action: "renamed",
-          server: renamedServer,
+          action: "restarted",
+          server: updatedServer,
           status: "online",
-          previousName,
-        };
-      }
-
-      // Server exists - check its status
-      const status = await processService.getStatus(existingServer.pm2Name);
-
-      if (status === "online") {
-        // Already running
-        return {
-          action: "existing",
-          server: existingServer,
-          status: "online",
+          envChanged,
+          commandChanged,
         };
       }
 
@@ -153,8 +250,9 @@ export async function executeStart(options: StartCommandOptions): Promise<StartC
     const protocol = options.protocol ?? config.protocol;
     const url = `${protocol}://${hostname}:${port}`;
 
-    // Template variables for substitution (includes HTTPS cert/key paths)
+    // Template variables for substitution (includes HTTPS cert/key paths and custom vars)
     const templateVars = {
+      ...(config.variables ?? {}), // Custom variables first
       port,
       hostname,
       url,
@@ -172,14 +270,14 @@ export async function executeStart(options: StartCommandOptions): Promise<StartC
 
     // Extract used config keys and create snapshot for drift detection
     const usedConfigKeys = extractUsedConfigKeys(options.command);
-    const configSnapshot = createConfigSnapshot(config, usedConfigKeys);
+    const configSnapshot = createConfigSnapshot(config, usedConfigKeys, options.command);
 
-    // Register server
+    // Register server with the determined name (explicit or deterministic)
     const server = await registryService.addServer({
       command: options.command,
       cwd,
       port,
-      name: options.name,
+      name: serverName,
       protocol,
       hostname,
       tags: options.tags,
@@ -242,6 +340,139 @@ function parseCommand(command: string): { script: string; args: string[] } {
   const script = parts[0] || "node";
   const args = parts.slice(1);
   return { script, args };
+}
+
+/**
+ * Handle refreshing a server due to config drift
+ */
+async function handleDriftRefresh(
+  server: ServerEntry,
+  config: GlobalConfig,
+  drift: DriftResult,
+  processService: ProcessService,
+  registryService: RegistryService,
+  options: StartCommandOptions,
+  commandChanged = false,
+): Promise<StartCommandResult> {
+  const portService = new PortService(config);
+
+  // Use new command if it changed (with explicit -n), otherwise keep existing
+  const newCommand = commandChanged ? options.command : server.command;
+
+  let newPort = server.port;
+  let portReassigned = false;
+  let originalPort: number | undefined;
+
+  // Handle port out of range - use deterministic port assignment
+  if (drift.portOutOfRange) {
+    originalPort = server.port;
+    const { port, reassigned } = await portService.assignPort(
+      server.cwd,
+      newCommand,
+      undefined, // No explicit port - use deterministic logic
+    );
+    newPort = port;
+    portReassigned = reassigned || (port !== server.port);
+  }
+
+  // Get new config values
+  const hostname = config.hostname;
+  const protocol = options.protocol ?? config.protocol;
+  const url = `${protocol}://${hostname}:${newPort}`;
+
+  // Build template variables with new config (including custom variables)
+  const templateVars = {
+    ...(config.variables ?? {}), // Custom variables first
+    port: newPort,
+    hostname,
+    url,
+    "https-cert": config.httpsCert ?? "",
+    "https-key": config.httpsKey ?? "",
+  };
+
+  // Re-render command with new values
+  const resolvedCommand = renderTemplate(newCommand, templateVars);
+
+  // Re-resolve environment variables
+  const resolvedEnv = options.env
+    ? renderEnvTemplates(options.env, templateVars)
+    : server.env;
+
+  // Re-extract used config keys and create new snapshot
+  const usedConfigKeys = extractUsedConfigKeys(newCommand);
+  const configSnapshot = createConfigSnapshot(config, usedConfigKeys, newCommand);
+
+  // Update registry
+  await registryService.updateServer(server.id, {
+    command: newCommand,
+    port: newPort,
+    protocol,
+    hostname,
+    resolvedCommand,
+    env: resolvedEnv,
+    usedConfigKeys,
+    configSnapshot,
+  });
+
+  // Delete old PM2 process and start fresh
+  try {
+    await processService.delete(server.pm2Name);
+  } catch {
+    // Process might not exist
+  }
+
+  const updatedServer: ServerEntry = {
+    ...server,
+    command: newCommand,
+    port: newPort,
+    protocol,
+    hostname,
+    resolvedCommand,
+    env: resolvedEnv,
+    usedConfigKeys,
+    configSnapshot,
+  };
+
+  await startProcess(processService, updatedServer);
+
+  logger.info(
+    { serverName: server.name, driftedKeys: drift.driftedValues.map(d => d.configKey) },
+    "Server refreshed due to config drift",
+  );
+
+  return {
+    action: "refreshed",
+    server: updatedServer,
+    status: "online",
+    configDrift: true,
+    commandChanged,
+    driftDetails: drift.driftedValues.map(d => {
+      const from = d.startedWith ?? "(not set)";
+      const to = d.currentValue ?? "(not set)";
+      return `${d.configKey}: "${from}" → "${to}"`;
+    }),
+    portReassigned,
+    originalPort,
+  };
+}
+
+/**
+ * Build template variables from config and server details
+ */
+function buildTemplateVars(
+  config: GlobalConfig,
+  port: number,
+  hostname: string,
+  protocol: string,
+): TemplateVariables {
+  const url = `${protocol}://${hostname}:${port}`;
+  return {
+    port,
+    hostname,
+    url,
+    "https-cert": config.httpsCert ?? "",
+    "https-key": config.httpsKey ?? "",
+  };
 }
 
 /**

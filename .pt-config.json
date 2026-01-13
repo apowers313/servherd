@@ -1,9 +1,9 @@
 {
   "promptDirs": [
-    "/home/apowers/Projects/server-manager/.prompts",
+    ".prompts",
     "node_modules/pupt/prompts"
   ],
-  "historyDir": "/home/apowers/Projects/server-manager/.pthistory",
+  "historyDir": ".pthistory",
   "defaultCmd": "claude",
   "defaultCmdArgs": [
     "--permission-mode",
@@ -14,12 +14,12 @@
   },
   "autoReview": true,
   "autoRun": true,
-  "gitPromptDir": "/home/apowers/Projects/server-manager/.git-prompts",
+  "gitPromptDir": ".git-prompts",
   "handlebarsExtensions": [],
   "version": "4.0.0",
   "outputCapture": {
     "enabled": false,
-    "directory": "/home/apowers/Projects/server-manager/.pt-output",
+    "directory": ".pthistory",
     "maxSizeMB": 50,
     "retentionDays": 30
   },

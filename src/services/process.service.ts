@@ -1,7 +1,18 @@
-import pm2 from "pm2";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { PM2ProcessDescription, PM2StartOptions, PM2Process } from "../types/pm2.js";
 import type { ServerStatus } from "../types/registry.js";
 import { logger } from "../utils/logger.js";
+
+// Set PM2_HOME to servherd's own directory BEFORE PM2 is imported.
+// This ensures servherd uses its own PM2 daemon, isolated from other projects.
+// Only set if not already explicitly configured by the user.
+if (!process.env.PM2_HOME) {
+  process.env.PM2_HOME = join(homedir(), ".servherd", "pm2");
+}
+
+// Now import PM2 - it will pick up our PM2_HOME setting
+const pm2 = (await import("pm2")).default;
 
 const SERVHERD_PREFIX = "servherd-";
 

@@ -140,5 +140,104 @@ describe("servherd_config MCP tool", () => {
 
     // reset
     expect(schema.safeParse({ reset: true }).success).toBe(true);
+
+    // add with addValue
+    expect(schema.safeParse({ add: "my-token", addValue: "secret" }).success).toBe(true);
+
+    // remove
+    expect(schema.safeParse({ remove: "my-token" }).success).toBe(true);
+
+    // listVars
+    expect(schema.safeParse({ listVars: true }).success).toBe(true);
+  });
+
+  describe("custom variables", () => {
+    it("should add a custom variable", async () => {
+      mockConfigService.load.mockResolvedValue({ ...defaultConfig, variables: {} });
+      mockConfigService.save.mockResolvedValue(undefined);
+
+      const result = await handleConfigTool({ add: "my-token", addValue: "secret123" });
+
+      expect(result.action).toBe("add");
+      expect(result.success).toBe(true);
+      expect(result.varName).toBe("my-token");
+      expect(result.varValue).toBe("secret123");
+      expect(result.message).toContain("{{my-token}}");
+    });
+
+    it("should require addValue when using add", async () => {
+      const result = await handleConfigTool({ add: "my-token" });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("--value is required");
+    });
+
+    it("should reject reserved variable names", async () => {
+      const result = await handleConfigTool({ add: "port", addValue: "8080" });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("reserved variable name");
+    });
+
+    it("should remove a custom variable", async () => {
+      mockConfigService.load.mockResolvedValue({
+        ...defaultConfig,
+        variables: { "my-token": "secret123" },
+      });
+      mockConfigService.save.mockResolvedValue(undefined);
+
+      const result = await handleConfigTool({ remove: "my-token" });
+
+      expect(result.action).toBe("remove");
+      expect(result.success).toBe(true);
+      expect(result.varName).toBe("my-token");
+      expect(result.message).toContain("{{my-token}}");
+    });
+
+    it("should return error when removing nonexistent variable", async () => {
+      mockConfigService.load.mockResolvedValue({
+        ...defaultConfig,
+        variables: {},
+      });
+
+      const result = await handleConfigTool({ remove: "nonexistent" });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("does not exist");
+    });
+
+    it("should list all custom variables", async () => {
+      mockConfigService.load.mockResolvedValue({
+        ...defaultConfig,
+        variables: {
+          "my-token": "secret123",
+          "api-key": "abc456",
+        },
+      });
+
+      const result = await handleConfigTool({ listVars: true });
+
+      expect(result.action).toBe("listVars");
+      expect(result.success).toBe(true);
+      expect(result.variables).toEqual({
+        "my-token": "secret123",
+        "api-key": "abc456",
+      });
+      expect(result.message).toContain("2 custom variable(s)");
+    });
+
+    it("should return empty variables when none defined", async () => {
+      mockConfigService.load.mockResolvedValue({
+        ...defaultConfig,
+        variables: {},
+      });
+
+      const result = await handleConfigTool({ listVars: true });
+
+      expect(result.action).toBe("listVars");
+      expect(result.success).toBe(true);
+      expect(result.variables).toEqual({});
+      expect(result.message).toContain("No custom variables");
+    });
   });
 });

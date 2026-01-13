@@ -41,70 +41,115 @@ describe("config-drift", () => {
   describe("extractUsedConfigKeys", () => {
     it("should extract hostname config key from {{hostname}}", () => {
       const keys = extractUsedConfigKeys("node server.js --host {{hostname}}");
-      expect(keys).toEqual(["hostname"]);
+      expect(keys).toContain("hostname");
+      expect(keys).toContain("portRange"); // Always included as implicit dependency
     });
 
     it("should extract httpsCert config key from {{https-cert}}", () => {
       const keys = extractUsedConfigKeys("node server.js --cert {{https-cert}}");
-      expect(keys).toEqual(["httpsCert"]);
+      expect(keys).toContain("httpsCert");
+      expect(keys).toContain("portRange"); // Always included as implicit dependency
     });
 
     it("should extract httpsKey config key from {{https-key}}", () => {
       const keys = extractUsedConfigKeys("node server.js --key {{https-key}}");
-      expect(keys).toEqual(["httpsKey"]);
+      expect(keys).toContain("httpsKey");
+      expect(keys).toContain("portRange"); // Always included as implicit dependency
     });
 
     it("should extract multiple config keys", () => {
       const keys = extractUsedConfigKeys("node server.js --cert {{https-cert}} --key {{https-key}}");
       expect(keys).toContain("httpsCert");
       expect(keys).toContain("httpsKey");
+      expect(keys).toContain("portRange");
     });
 
-    it("should not include non-configurable variables like port", () => {
+    it("should always include portRange as implicit dependency", () => {
       const keys = extractUsedConfigKeys("node server.js --port {{port}}");
-      expect(keys).toEqual([]);
+      expect(keys).toContain("portRange");
+      // port is auto-generated so no configKey for it
+      expect(keys).not.toContain("port");
     });
 
     it("should deduplicate config keys", () => {
       const keys = extractUsedConfigKeys("{{hostname}} {{hostname}} {{hostname}}");
-      expect(keys).toEqual(["hostname"]);
+      expect(keys).toContain("hostname");
+      expect(keys).toContain("portRange");
+      // Should only have hostname once (plus portRange)
+      expect(keys.filter(k => k === "hostname")).toHaveLength(1);
     });
 
-    it("should return empty array for command with no template variables", () => {
+    it("should include portRange even for command with no template variables", () => {
       const keys = extractUsedConfigKeys("node server.js");
-      expect(keys).toEqual([]);
+      expect(keys).toContain("portRange");
+    });
+
+    it("should include protocol when {{url}} is used", () => {
+      const keys = extractUsedConfigKeys("node server.js --url {{url}}");
+      expect(keys).toContain("protocol");
+      expect(keys).toContain("portRange");
     });
   });
 
   describe("createConfigSnapshot", () => {
     it("should create snapshot with hostname", () => {
-      const snapshot = createConfigSnapshot(baseConfig, ["hostname"]);
-      expect(snapshot).toEqual({ hostname: "localhost" });
+      const snapshot = createConfigSnapshot(baseConfig, ["hostname"], "node server.js --host {{hostname}}");
+      expect(snapshot.hostname).toBe("localhost");
     });
 
     it("should create snapshot with httpsCert", () => {
-      const snapshot = createConfigSnapshot(baseConfig, ["httpsCert"]);
-      expect(snapshot).toEqual({ httpsCert: "/path/to/cert.pem" });
+      const snapshot = createConfigSnapshot(baseConfig, ["httpsCert"], "node server.js --cert {{https-cert}}");
+      expect(snapshot.httpsCert).toBe("/path/to/cert.pem");
     });
 
     it("should create snapshot with multiple keys", () => {
-      const snapshot = createConfigSnapshot(baseConfig, ["hostname", "httpsCert", "httpsKey"]);
-      expect(snapshot).toEqual({
-        hostname: "localhost",
-        httpsCert: "/path/to/cert.pem",
-        httpsKey: "/path/to/key.pem",
-      });
+      const snapshot = createConfigSnapshot(
+        baseConfig,
+        ["hostname", "httpsCert", "httpsKey"],
+        "node server.js --host {{hostname}} --cert {{https-cert}} --key {{https-key}}",
+      );
+      expect(snapshot.hostname).toBe("localhost");
+      expect(snapshot.httpsCert).toBe("/path/to/cert.pem");
+      expect(snapshot.httpsKey).toBe("/path/to/key.pem");
     });
 
     it("should handle empty used keys", () => {
-      const snapshot = createConfigSnapshot(baseConfig, []);
-      expect(snapshot).toEqual({});
+      const snapshot = createConfigSnapshot(baseConfig, [], "node server.js");
+      // No template vars, so no snapshot values (except custom vars which are also empty)
+      expect(snapshot.hostname).toBeUndefined();
+      expect(snapshot.httpsCert).toBeUndefined();
     });
 
     it("should handle undefined config values", () => {
       const configWithoutCert = { ...baseConfig, httpsCert: undefined };
-      const snapshot = createConfigSnapshot(configWithoutCert, ["httpsCert"]);
-      expect(snapshot).toEqual({ httpsCert: undefined });
+      const snapshot = createConfigSnapshot(configWithoutCert, ["httpsCert"], "node server.js --cert {{https-cert}}");
+      expect(snapshot.httpsCert).toBeUndefined();
+    });
+
+    it("should create snapshot with portRange when included", () => {
+      const snapshot = createConfigSnapshot(baseConfig, ["portRange"], "node server.js --port {{port}}");
+      expect(snapshot.portRangeMin).toBe(3000);
+      expect(snapshot.portRangeMax).toBe(9999);
+    });
+
+    it("should create snapshot with protocol when included", () => {
+      const snapshot = createConfigSnapshot(baseConfig, ["protocol"], "node server.js --url {{url}}");
+      expect(snapshot.protocol).toBe("http");
+    });
+
+    it("should capture custom variables used in command", () => {
+      const configWithVars: GlobalConfig = {
+        ...baseConfig,
+        variables: { "api-key": "secret123", "unused-var": "ignored" },
+      };
+      const snapshot = createConfigSnapshot(
+        configWithVars,
+        ["hostname"],
+        "node server.js --host {{hostname}} --api-key {{api-key}}",
+      );
+      expect(snapshot.customVariables).toEqual({ "api-key": "secret123" });
+      // unused-var should not be in snapshot since it's not in the command
+      expect(snapshot.customVariables?.["unused-var"]).toBeUndefined();
     });
   });
 
@@ -193,6 +238,90 @@ describe("config-drift", () => {
       expect(result.hasDrift).toBe(true);
       expect(result.driftedValues[0].startedWith).toBeUndefined();
       expect(result.driftedValues[0].currentValue).toBe("/path/to/cert.pem");
+    });
+
+    it("should detect port out of range", () => {
+      const server = createServer({
+        command: "node server.js --port {{port}}",
+        port: 2000, // Below the range min of 3000
+        usedConfigKeys: ["portRange"],
+        configSnapshot: { portRangeMin: 1000, portRangeMax: 5000 },
+      });
+
+      const result = detectDrift(server, baseConfig);
+
+      expect(result.hasDrift).toBe(true);
+      expect(result.portOutOfRange).toBe(true);
+      expect(result.driftedValues).toHaveLength(1);
+      expect(result.driftedValues[0].configKey).toBe("portRange");
+    });
+
+    it("should not flag port in range as drift", () => {
+      const server = createServer({
+        command: "node server.js --port {{port}}",
+        port: 5000, // Within range
+        usedConfigKeys: ["portRange"],
+        configSnapshot: { portRangeMin: 3000, portRangeMax: 9999 },
+      });
+
+      const result = detectDrift(server, baseConfig);
+
+      expect(result.portOutOfRange).toBeFalsy();
+    });
+
+    it("should detect protocol change", () => {
+      const server = createServer({
+        command: "node server.js --url {{url}}",
+        usedConfigKeys: ["protocol"],
+        configSnapshot: { protocol: "https" },
+      });
+
+      const result = detectDrift(server, baseConfig); // baseConfig has protocol: "http"
+
+      expect(result.hasDrift).toBe(true);
+      expect(result.protocolChanged).toBe(true);
+    });
+
+    it("should detect custom variable drift", () => {
+      const configWithVars: GlobalConfig = {
+        ...baseConfig,
+        variables: { "api-key": "new-secret" },
+      };
+      const server = createServer({
+        command: "node server.js --api-key {{api-key}}",
+        usedConfigKeys: ["portRange"],
+        configSnapshot: {
+          portRangeMin: 3000,
+          portRangeMax: 9999,
+          customVariables: { "api-key": "old-secret" },
+        },
+      });
+
+      const result = detectDrift(server, configWithVars);
+
+      expect(result.hasDrift).toBe(true);
+      expect(result.driftedValues.some(d => d.configKey === "variables.api-key")).toBe(true);
+    });
+
+    it("should detect custom variable removed", () => {
+      const configWithoutVars: GlobalConfig = {
+        ...baseConfig,
+        variables: {},
+      };
+      const server = createServer({
+        command: "node server.js --api-key {{api-key}}",
+        usedConfigKeys: ["portRange"],
+        configSnapshot: {
+          portRangeMin: 3000,
+          portRangeMax: 9999,
+          customVariables: { "api-key": "old-secret" },
+        },
+      });
+
+      const result = detectDrift(server, configWithoutVars);
+
+      expect(result.hasDrift).toBe(true);
+      expect(result.driftedValues.some(d => d.currentValue === undefined)).toBe(true);
     });
   });
 

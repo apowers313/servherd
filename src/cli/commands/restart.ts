@@ -49,7 +49,7 @@ async function refreshServerConfig(
 
   // Extract new used config keys and create new snapshot
   const usedConfigKeys = extractUsedConfigKeys(server.command);
-  const configSnapshot = createConfigSnapshot(config, usedConfigKeys);
+  const configSnapshot = createConfigSnapshot(config, usedConfigKeys, server.command);
 
   // Update the registry
   await registryService.updateServer(server.id, {
