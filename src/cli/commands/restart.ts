@@ -6,7 +6,7 @@ import type { GlobalConfig } from "../../types/config.js";
 import { formatRestartResult, formatError } from "../output/formatters.js";
 import { formatAsJson, formatErrorAsJson } from "../output/json-formatter.js";
 import { logger } from "../../utils/logger.js";
-import { renderTemplate, renderEnvTemplates, getTemplateVariables } from "../../utils/template.js";
+import { renderTemplate, renderEnvTemplates, getTemplateVariables, type TemplateContext } from "../../utils/template.js";
 import {
   extractUsedConfigKeys,
   createConfigSnapshot,
@@ -29,6 +29,21 @@ export interface RestartResult {
 }
 
 /**
+ * Build template context for server lookups
+ */
+function buildTemplateContext(
+  registryService: RegistryService,
+  cwd: string,
+): TemplateContext {
+  return {
+    cwd,
+    lookupServer: (name: string, lookupCwd?: string) => {
+      return registryService.findByCwdAndName(lookupCwd ?? cwd, name);
+    },
+  };
+}
+
+/**
  * Re-resolve a server's command template with current config values
  * Updates the registry with new resolved command and config snapshot
  */
@@ -36,16 +51,17 @@ async function refreshServerConfig(
   server: ServerEntry,
   config: GlobalConfig,
   registryService: RegistryService,
+  templateContext: TemplateContext,
 ): Promise<{ resolvedCommand: string; configSnapshot: ReturnType<typeof createConfigSnapshot> }> {
   // Get template variables with current config
   const templateVars = getTemplateVariables(config, server.port);
 
   // Re-resolve the command template
-  const resolvedCommand = renderTemplate(server.command, templateVars);
+  const resolvedCommand = renderTemplate(server.command, templateVars, templateContext);
 
   // Re-resolve environment variables if any
   const resolvedEnv = server.env
-    ? renderEnvTemplates(server.env, templateVars)
+    ? renderEnvTemplates(server.env, templateVars, templateContext)
     : {};
 
   // Extract new used config keys and create new snapshot
@@ -109,12 +125,15 @@ export async function executeRestart(options: RestartCommandOptions): Promise<Re
       try {
         let configRefreshed = false;
 
+        // Build template context for this server's cwd
+        const templateContext = buildTemplateContext(registryService, server.cwd);
+
         // Check if we should refresh config on restart (on-start mode)
         if (config.refreshOnChange === "on-start") {
           const drift = detectDrift(server, config);
           if (drift.hasDrift) {
             // Re-resolve command with new config values
-            const { resolvedCommand } = await refreshServerConfig(server, config, registryService);
+            const { resolvedCommand } = await refreshServerConfig(server, config, registryService, templateContext);
             configRefreshed = true;
 
             // Delete old process and start with new command

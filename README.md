@@ -200,6 +200,79 @@ servherd start --name my-flask -e FLASK_RUN_PORT={{port}} -- flask run
 servherd start --name my-fastapi -- uvicorn main:app --port {{port}}
 ```
 
+## Cross-Server Communication
+
+When running multiple servers (like a frontend and backend), you often need one server to know the port of another. The `{{$ ...}}` helper looks up properties from other running servers.
+
+### Basic Syntax
+
+```bash
+# Positional arguments: {{$ "server-name" "property"}}
+{{$ "backend" "port"}}
+
+# Named arguments (more explicit)
+{{$ service="backend" prop="port"}}
+
+# With aliases
+{{$ svc="backend" property="port"}}
+
+# Explicit working directory (for cross-project lookups)
+{{$ service="backend" prop="port" cwd="/path/to/project"}}
+```
+
+### Available Properties
+
+| Property | Description | Example |
+|----------|-------------|---------|
+| `port` | Server's assigned port | `9042` |
+| `url` | Full URL | `http://localhost:9042` |
+| `name` | Server name | `backend` |
+| `hostname` | Configured hostname | `localhost` |
+| `protocol` | Protocol (http/https) | `http` |
+
+### Frontend + Backend Example
+
+Start a backend API server, then a frontend that connects to it:
+
+```bash
+# Start backend first
+servherd start -n backend -e 'PORT={{port}}' -- node server.js
+
+# Start frontend with reference to backend's port
+servherd start -n frontend \
+  -e 'PORT={{port}}' \
+  -e 'API_URL=http://localhost:{{$ "backend" "port"}}' \
+  -- npm run dev
+```
+
+The frontend's `API_URL` will be set to the backend's actual port (e.g., `http://localhost:9042`).
+
+### npm Scripts Example
+
+In your `package.json`, use single quotes inside double quotes to avoid escaping issues:
+
+```json
+{
+  "scripts": {
+    "start:backend": "servherd start -n backend -e 'PORT={{port}}' -- node server.js",
+    "start:frontend": "servherd start -n frontend -e 'PORT={{port}}' -e 'API_URL=http://localhost:{{$ \"backend\" \"port\"}}' -- npm run dev",
+    "stop": "servherd stop --all"
+  }
+}
+```
+
+**Quoting tips for npm scripts:**
+- Wrap `-e` values in single quotes: `-e 'VAR={{value}}'`
+- Use escaped double quotes inside for `$` helper arguments: `{{$ \"name\" \"prop\"}}`
+- Both `{{$ "x" "y"}}` and `{{$ 'x' 'y'}}` work in Handlebars, but single quotes are easier in JSON
+
+### Important Notes
+
+1. **Start order matters** - The referenced server must be running before you start the dependent server
+2. **Same working directory** - By default, lookups are scoped to servers in the same working directory (same git worktree)
+3. **Error on missing** - If the referenced server doesn't exist, the start command will fail with a clear error message
+4. **Cross-project lookups** - Use the `cwd` parameter to reference servers in other directories
+
 ## CLI Reference
 
 ### Global Options
@@ -238,6 +311,7 @@ servherd start [options] -- <command>
 | `{{url}}` | Full URL | `http://localhost:8080` |
 | `{{https-cert}}` | HTTPS certificate path | `/path/to/cert.pem` |
 | `{{https-key}}` | HTTPS key path | `/path/to/key.pem` |
+| `{{$ "name" "prop"}}` | Look up property from another server | `{{$ "backend" "port"}}` |
 
 **Examples:**
 ```bash

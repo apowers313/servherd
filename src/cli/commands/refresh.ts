@@ -4,7 +4,7 @@ import { ConfigService } from "../../services/config.service.js";
 import { PortService } from "../../services/port.service.js";
 import type { ServerEntry, ServerStatus } from "../../types/registry.js";
 import type { GlobalConfig } from "../../types/config.js";
-import { renderTemplate, renderEnvTemplates, getTemplateVariables } from "../../utils/template.js";
+import { renderTemplate, renderEnvTemplates, getTemplateVariables, type TemplateContext } from "../../utils/template.js";
 import {
   extractUsedConfigKeys,
   createConfigSnapshot,
@@ -35,6 +35,21 @@ export interface RefreshResult {
 }
 
 /**
+ * Build template context for server lookups
+ */
+function buildTemplateContext(
+  registryService: RegistryService,
+  cwd: string,
+): TemplateContext {
+  return {
+    cwd,
+    lookupServer: (name: string, lookupCwd?: string) => {
+      return registryService.findByCwdAndName(lookupCwd ?? cwd, name);
+    },
+  };
+}
+
+/**
  * Re-resolve a server's command template with current config values
  * Updates the registry with new resolved command and config snapshot
  * @param newPort - Optional new port if port was reassigned
@@ -43,6 +58,7 @@ async function refreshServerConfig(
   server: ServerEntry,
   config: GlobalConfig,
   registryService: RegistryService,
+  templateContext: TemplateContext,
   newPort?: number,
 ): Promise<{ resolvedCommand: string; port: number }> {
   const port = newPort ?? server.port;
@@ -51,11 +67,11 @@ async function refreshServerConfig(
   const templateVars = getTemplateVariables(config, port);
 
   // Re-resolve the command template
-  const resolvedCommand = renderTemplate(server.command, templateVars);
+  const resolvedCommand = renderTemplate(server.command, templateVars, templateContext);
 
   // Re-resolve environment variables if any
   const resolvedEnv = server.env
-    ? renderEnvTemplates(server.env, templateVars)
+    ? renderEnvTemplates(server.env, templateVars, templateContext)
     : {};
 
   // Extract new used config keys and create new snapshot
@@ -132,6 +148,9 @@ export async function executeRefresh(options: RefreshCommandOptions): Promise<Re
     for (const { server, drift } of serversWithDrift) {
       const driftDetails = formatDrift(drift);
 
+      // Build template context for this server's cwd
+      const templateContext = buildTemplateContext(registryService, server.cwd);
+
       // Check if port needs reassignment
       let newPort: number | undefined;
       let portReassigned = false;
@@ -166,7 +185,7 @@ export async function executeRefresh(options: RefreshCommandOptions): Promise<Re
 
       try {
         // Re-resolve command with new config values (and new port if reassigned)
-        const { resolvedCommand, port } = await refreshServerConfig(server, config, registryService, newPort);
+        const { resolvedCommand, port } = await refreshServerConfig(server, config, registryService, templateContext, newPort);
 
         // Delete old process and start with new command
         try {

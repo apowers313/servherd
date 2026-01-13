@@ -8,8 +8,11 @@ import {
   findMissingVariables,
   formatMissingVariablesError,
   formatMissingVariablesForMCP,
+  usesServerLookup,
+  type TemplateContext,
 } from "../../../src/utils/template.js";
 import type { GlobalConfig } from "../../../src/types/config.js";
+import type { ServerEntry } from "../../../src/types/registry.js";
 
 describe("TemplateEngine", () => {
   describe("renderTemplate", () => {
@@ -688,6 +691,203 @@ describe("TemplateEngine", () => {
 
       expect(result).toContain("set=\"httpsCert\"");
       expect(result).toContain("add=\"my-token\"");
+    });
+  });
+
+  describe("usesServerLookup", () => {
+    it("should detect {{$ ...}} syntax", () => {
+      expect(usesServerLookup("{{$ \"backend\" \"port\"}}")).toBe(true);
+      expect(usesServerLookup("{{$ svc=\"backend\" prop=\"port\"}}")).toBe(true);
+    });
+
+    it("should return false for regular templates", () => {
+      expect(usesServerLookup("{{port}}")).toBe(false);
+      expect(usesServerLookup("npm start --port {{port}}")).toBe(false);
+    });
+
+    it("should return false for empty template", () => {
+      expect(usesServerLookup("")).toBe(false);
+    });
+  });
+
+  describe("$ helper (server lookup)", () => {
+    // Mock server entries for testing
+    const mockServers: Record<string, ServerEntry> = {
+      backend: {
+        id: "backend-id",
+        name: "backend",
+        command: "node server.js",
+        resolvedCommand: "node server.js --port 9042",
+        cwd: "/project",
+        port: 9042,
+        createdAt: new Date().toISOString(),
+        status: "online",
+      } as ServerEntry,
+      frontend: {
+        id: "frontend-id",
+        name: "frontend",
+        command: "vite",
+        resolvedCommand: "vite --port 9043",
+        cwd: "/project",
+        port: 9043,
+        createdAt: new Date().toISOString(),
+        status: "online",
+      } as ServerEntry,
+    };
+
+    const createContext = (cwd = "/project"): TemplateContext => ({
+      cwd,
+      lookupServer: (name: string, lookupCwd?: string) => {
+        const server = mockServers[name];
+        if (server && server.cwd === lookupCwd) {
+          return server;
+        }
+        return undefined;
+      },
+    });
+
+    it("should resolve server port with positional args", () => {
+      const result = renderTemplate(
+        "API_PORT={{$ \"backend\" \"port\"}}",
+        {},
+        createContext(),
+      );
+      expect(result).toBe("API_PORT=9042");
+    });
+
+    it("should resolve server port with hash args", () => {
+      const result = renderTemplate(
+        "{{$ service=\"backend\" prop=\"port\"}}",
+        {},
+        createContext(),
+      );
+      expect(result).toBe("9042");
+    });
+
+    it("should support svc alias for service", () => {
+      const result = renderTemplate(
+        "{{$ svc=\"backend\" prop=\"port\"}}",
+        {},
+        createContext(),
+      );
+      expect(result).toBe("9042");
+    });
+
+    it("should support property alias for prop", () => {
+      const result = renderTemplate(
+        "{{$ service=\"backend\" property=\"port\"}}",
+        {},
+        createContext(),
+      );
+      expect(result).toBe("9042");
+    });
+
+    it("should resolve different properties", () => {
+      const result = renderTemplate(
+        "NAME={{$ \"backend\" \"name\"}} PORT={{$ \"backend\" \"port\"}}",
+        {},
+        createContext(),
+      );
+      expect(result).toBe("NAME=backend PORT=9042");
+    });
+
+    it("should look up different servers", () => {
+      const result = renderTemplate(
+        "BACKEND={{$ \"backend\" \"port\"}} FRONTEND={{$ \"frontend\" \"port\"}}",
+        {},
+        createContext(),
+      );
+      expect(result).toBe("BACKEND=9042 FRONTEND=9043");
+    });
+
+    it("should use cwd from hash arg if provided", () => {
+      const context: TemplateContext = {
+        lookupServer: (name: string, cwd?: string) => {
+          if (name === "backend" && cwd === "/other-project") {
+            return { ...mockServers.backend, port: 8888 } as ServerEntry;
+          }
+          return undefined;
+        },
+      };
+      const result = renderTemplate(
+        "{{$ service=\"backend\" prop=\"port\" cwd=\"/other-project\"}}",
+        {},
+        context,
+      );
+      expect(result).toBe("8888");
+    });
+
+    it("should combine with regular variables", () => {
+      const result = renderTemplate(
+        "PORT={{port}} BACKEND={{$ \"backend\" \"port\"}}",
+        { port: 3000 },
+        createContext(),
+      );
+      expect(result).toBe("PORT=3000 BACKEND=9042");
+    });
+
+    it("should throw error when server not found", () => {
+      expect(() =>
+        renderTemplate(
+          "{{$ \"nonexistent\" \"port\"}}",
+          {},
+          createContext(),
+        ),
+      ).toThrow("Server \"nonexistent\" not found");
+    });
+
+    it("should throw error when property not found", () => {
+      expect(() =>
+        renderTemplate(
+          "{{$ \"backend\" \"nonexistent\"}}",
+          {},
+          createContext(),
+        ),
+      ).toThrow("Property \"nonexistent\" not found");
+    });
+
+    it("should throw error when no service name provided", () => {
+      expect(() =>
+        renderTemplate(
+          "{{$ prop=\"port\"}}",
+          {},
+          createContext(),
+        ),
+      ).toThrow("$ helper requires a service name");
+    });
+
+    it("should throw error when no property name provided", () => {
+      expect(() =>
+        renderTemplate(
+          "{{$ service=\"backend\"}}",
+          {},
+          createContext(),
+        ),
+      ).toThrow("$ helper requires a property name");
+    });
+
+    it("should throw error when no context provided", () => {
+      expect(() =>
+        renderTemplate(
+          "{{$ \"backend\" \"port\"}}",
+          {},
+          // No context provided
+        ),
+      ).toThrow("$ helper requires a server lookup function");
+    });
+
+    it("should throw error when no cwd available", () => {
+      const context: TemplateContext = {
+        lookupServer: () => undefined,
+        // No cwd
+      };
+      expect(() =>
+        renderTemplate(
+          "{{$ \"backend\" \"port\"}}",
+          {},
+          context,
+        ),
+      ).toThrow("$ helper requires a cwd");
     });
   });
 });

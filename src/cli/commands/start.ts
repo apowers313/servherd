@@ -12,6 +12,7 @@ import {
   formatMissingVariablesError,
   type MissingVariable,
   type TemplateVariables,
+  type TemplateContext,
 } from "../../utils/template.js";
 import {
   extractUsedConfigKeys,
@@ -77,6 +78,9 @@ export async function executeStart(options: StartCommandOptions): Promise<StartC
 
     const cwd = options.cwd || process.cwd();
 
+    // Build template context for server lookups
+    const templateContext = buildTemplateContext(registryService, cwd);
+
     // Determine server name for identity lookup
     // New identity model: server identity = cwd + name
     let serverName: string;
@@ -120,14 +124,14 @@ export async function executeStart(options: StartCommandOptions): Promise<StartC
 
           if (shouldRefresh) {
             return await handleDriftRefresh(
-              existingServer, config, drift, processService, registryService, options, commandChanged,
+              existingServer, config, drift, processService, registryService, options, templateContext, commandChanged,
             );
           }
           // User declined - continue with normal flow but mark it
         } else if (refreshOnChange === "on-start" || refreshOnChange === "auto") {
           // Auto-refresh
           return await handleDriftRefresh(
-            existingServer, config, drift, processService, registryService, options, commandChanged,
+            existingServer, config, drift, processService, registryService, options, templateContext, commandChanged,
           );
         }
         // refreshOnChange === "manual" - don't auto-refresh, continue with normal flow
@@ -139,7 +143,7 @@ export async function executeStart(options: StartCommandOptions): Promise<StartC
       // Check if environment variables have changed
       const templateVars = buildTemplateVars(config, existingServer.port, existingServer.hostname, existingServer.protocol);
       const resolvedEnv = options.env
-        ? renderEnvTemplates(options.env, templateVars)
+        ? renderEnvTemplates(options.env, templateVars, templateContext)
         : undefined;
       const envChanged = hasEnvChanged(existingServer.env, resolvedEnv);
 
@@ -167,7 +171,7 @@ export async function executeStart(options: StartCommandOptions): Promise<StartC
 
         // Re-resolve command if it changed
         const newCommand = commandChanged ? options.command : existingServer.command;
-        const newResolvedCommand = renderTemplate(newCommand, newTemplateVars);
+        const newResolvedCommand = renderTemplate(newCommand, newTemplateVars, templateContext);
 
         // Re-extract used config keys and create snapshot
         const usedConfigKeys = extractUsedConfigKeys(newCommand);
@@ -261,11 +265,11 @@ export async function executeStart(options: StartCommandOptions): Promise<StartC
     };
 
     // Resolve template variables in command
-    const resolvedCommand = renderTemplate(options.command, templateVars);
+    const resolvedCommand = renderTemplate(options.command, templateVars, templateContext);
 
     // Resolve template variables in environment values
     const resolvedEnv = options.env
-      ? renderEnvTemplates(options.env, templateVars)
+      ? renderEnvTemplates(options.env, templateVars, templateContext)
       : undefined;
 
     // Extract used config keys and create snapshot for drift detection
@@ -352,6 +356,7 @@ async function handleDriftRefresh(
   processService: ProcessService,
   registryService: RegistryService,
   options: StartCommandOptions,
+  templateContext: TemplateContext,
   commandChanged = false,
 ): Promise<StartCommandResult> {
   const portService = new PortService(config);
@@ -391,11 +396,11 @@ async function handleDriftRefresh(
   };
 
   // Re-render command with new values
-  const resolvedCommand = renderTemplate(newCommand, templateVars);
+  const resolvedCommand = renderTemplate(newCommand, templateVars, templateContext);
 
   // Re-resolve environment variables
   const resolvedEnv = options.env
-    ? renderEnvTemplates(options.env, templateVars)
+    ? renderEnvTemplates(options.env, templateVars, templateContext)
     : server.env;
 
   // Re-extract used config keys and create new snapshot
@@ -472,6 +477,23 @@ function buildTemplateVars(
     url,
     "https-cert": config.httpsCert ?? "",
     "https-key": config.httpsKey ?? "",
+  };
+}
+
+/**
+ * Build template context for server lookups
+ * @param registryService - Registry service instance for looking up servers
+ * @param cwd - Current working directory for scoping server lookups
+ */
+function buildTemplateContext(
+  registryService: RegistryService,
+  cwd: string,
+): TemplateContext {
+  return {
+    cwd,
+    lookupServer: (name: string, lookupCwd?: string) => {
+      return registryService.findByCwdAndName(lookupCwd ?? cwd, name);
+    },
   };
 }
 
