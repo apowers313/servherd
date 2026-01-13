@@ -24,7 +24,8 @@ export class RegistryService {
 
   constructor() {
     this.registry = { ...DEFAULT_REGISTRY, servers: [] };
-    this.registryDir = path.join(os.homedir(), ".servherd");
+    const homeDir = process.env.SERVHERD_HOME || os.homedir();
+    this.registryDir = path.join(homeDir, ".servherd");
     this.registryPath = path.join(this.registryDir, "registry.json");
   }
 

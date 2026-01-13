@@ -27,6 +27,13 @@ vi.mock("@inquirer/prompts", () => ({
   confirm: mockConfirm,
 }));
 
+// Mock CI detector to allow confirmation prompts in tests
+vi.mock("../../../../src/utils/ci-detector.js", () => ({
+  CIDetector: {
+    isCI: () => false,
+  },
+}));
+
 // Import after mocking
 const { executeRemove } = await import("../../../../src/cli/commands/remove.js");
 

@@ -45,7 +45,8 @@ export class ConfigService {
 
   constructor() {
     this.config = { ...DEFAULT_CONFIG };
-    this.globalConfigDir = path.join(os.homedir(), ".servherd");
+    const homeDir = process.env.SERVHERD_HOME || os.homedir();
+    this.globalConfigDir = path.join(homeDir, ".servherd");
     this.globalConfigPath = path.join(this.globalConfigDir, "config.json");
   }
 

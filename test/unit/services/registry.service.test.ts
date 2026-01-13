@@ -4,12 +4,28 @@ import type { ServerEntry, AddServerOptions } from "../../../src/types/registry.
 import * as path from "path";
 import * as os from "os";
 
+// Use vi.hoisted to ensure mock functions are created before module loading
+const { mockRelease, mockLock } = vi.hoisted(() => {
+  const release = vi.fn().mockResolvedValue(undefined);
+  return {
+    mockRelease: release,
+    mockLock: vi.fn().mockResolvedValue(release),
+  };
+});
+
 // Mock fs-extra/esm module
 vi.mock("fs-extra/esm", () => ({
   pathExists: vi.fn(),
   readJson: vi.fn(),
   ensureDir: vi.fn(),
   writeJson: vi.fn(),
+}));
+
+// Mock proper-lockfile to prevent filesystem access
+vi.mock("proper-lockfile", () => ({
+  default: {
+    lock: mockLock,
+  },
 }));
 
 // Mock names utility
@@ -21,9 +37,13 @@ vi.mock("../../../src/utils/names.js", () => ({
 import { pathExists, readJson, ensureDir, writeJson } from "fs-extra/esm";
 import { generateName } from "../../../src/utils/names.js";
 
+// Helper to get the servherd home directory (respects SERVHERD_HOME env var)
+const getServherdHome = () => process.env.SERVHERD_HOME || os.homedir();
+
 describe("RegistryService", () => {
-  const testRegistryDir = path.join(os.homedir(), ".servherd");
-  const testRegistryPath = path.join(testRegistryDir, "registry.json");
+  // Use getter functions so paths are evaluated after setup.ts sets SERVHERD_HOME
+  const getTestRegistryDir = () => path.join(getServherdHome(), ".servherd");
+  const getTestRegistryPath = () => path.join(getTestRegistryDir(), "registry.json");
 
   const existingServer: ServerEntry = {
     id: "uuid-123",
@@ -46,6 +66,10 @@ describe("RegistryService", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset lockfile mock to return the release function
+    mockRelease.mockClear();
+    mockRelease.mockResolvedValue(undefined);
+    mockLock.mockResolvedValue(mockRelease);
     // Reset name generator counter for predictable names
     let nameCounter = 0;
     vi.mocked(generateName).mockImplementation(() => {
@@ -102,7 +126,7 @@ describe("RegistryService", () => {
       await service.save();
 
       expect(writeJson).toHaveBeenCalledWith(
-        testRegistryPath,
+        getTestRegistryPath(),
         expect.objectContaining({ version: "1", servers: [] }),
         { spaces: 2 },
       );
@@ -117,7 +141,7 @@ describe("RegistryService", () => {
       await service.load();
       await service.save();
 
-      expect(ensureDir).toHaveBeenCalledWith(testRegistryDir);
+      expect(ensureDir).toHaveBeenCalledWith(getTestRegistryDir());
     });
   });
 
@@ -521,7 +545,7 @@ describe("RegistryService", () => {
       const service = new RegistryService();
       const registryPath = service.getRegistryPath();
 
-      expect(registryPath).toBe(testRegistryPath);
+      expect(registryPath).toBe(getTestRegistryPath());
     });
   });
 });

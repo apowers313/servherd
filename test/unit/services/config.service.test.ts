@@ -25,13 +25,22 @@ vi.mock("fs-extra/esm", () => ({
   writeJson: vi.fn(),
 }));
 
+// Mock fs/promises to prevent filesystem access (chmod is used in save())
+vi.mock("fs/promises", () => ({
+  chmod: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Import after mocks are set up
 import { ConfigService } from "../../../src/services/config.service.js";
 import { ensureDir, writeJson } from "fs-extra/esm";
 
+// Helper to get the servherd home directory (respects SERVHERD_HOME env var)
+const getServherdHome = () => process.env.SERVHERD_HOME || os.homedir();
+
 describe("ConfigService", () => {
-  const testConfigDir = path.join(os.homedir(), ".servherd");
-  const testConfigPath = path.join(testConfigDir, "config.json");
+  // Use getter functions so paths are evaluated after setup.ts sets SERVHERD_HOME
+  const getTestConfigDir = () => path.join(getServherdHome(), ".servherd");
+  const getTestConfigPath = () => path.join(getTestConfigDir(), "config.json");
 
   const validConfig: GlobalConfig = {
     version: "1",
@@ -61,14 +70,14 @@ describe("ConfigService", () => {
 
   describe("load", () => {
     it("should load config from global file when exists", async () => {
-      mockExplorer.load.mockResolvedValue({ config: validConfig, filepath: testConfigPath });
+      mockExplorer.load.mockResolvedValue({ config: validConfig, filepath: getTestConfigPath() });
       mockExplorer.search.mockResolvedValue(null);
 
       const service = new ConfigService();
       const config = await service.load();
 
       expect(config.hostname).toBe("localhost");
-      expect(mockExplorer.load).toHaveBeenCalledWith(testConfigPath);
+      expect(mockExplorer.load).toHaveBeenCalledWith(getTestConfigPath());
     });
 
     it("should return defaults when no config file exists", async () => {
@@ -84,7 +93,7 @@ describe("ConfigService", () => {
     it("should merge project config over global config", async () => {
       mockExplorer.load.mockResolvedValue({
         config: { ...validConfig, hostname: "global.local" },
-        filepath: testConfigPath,
+        filepath: getTestConfigPath(),
       });
       mockExplorer.search.mockResolvedValue({
         config: { hostname: "project.local" },
@@ -99,7 +108,7 @@ describe("ConfigService", () => {
 
     it("should merge environment variable overrides over file config", async () => {
       process.env.SERVHERD_HOSTNAME = "env.local";
-      mockExplorer.load.mockResolvedValue({ config: validConfig, filepath: testConfigPath });
+      mockExplorer.load.mockResolvedValue({ config: validConfig, filepath: getTestConfigPath() });
       mockExplorer.search.mockResolvedValue(null);
 
       const service = new ConfigService();
@@ -110,7 +119,7 @@ describe("ConfigService", () => {
 
     it("should override protocol from environment", async () => {
       process.env.SERVHERD_PROTOCOL = "https";
-      mockExplorer.load.mockResolvedValue({ config: validConfig, filepath: testConfigPath });
+      mockExplorer.load.mockResolvedValue({ config: validConfig, filepath: getTestConfigPath() });
       mockExplorer.search.mockResolvedValue(null);
 
       const service = new ConfigService();
@@ -122,7 +131,7 @@ describe("ConfigService", () => {
     it("should override port range from environment", async () => {
       process.env.SERVHERD_PORT_MIN = "5000";
       process.env.SERVHERD_PORT_MAX = "6000";
-      mockExplorer.load.mockResolvedValue({ config: validConfig, filepath: testConfigPath });
+      mockExplorer.load.mockResolvedValue({ config: validConfig, filepath: getTestConfigPath() });
       mockExplorer.search.mockResolvedValue(null);
 
       const service = new ConfigService();
@@ -135,7 +144,7 @@ describe("ConfigService", () => {
     it("should handle invalid global config file gracefully", async () => {
       mockExplorer.load.mockResolvedValue({
         config: { invalid: "config" },
-        filepath: testConfigPath,
+        filepath: getTestConfigPath(),
       });
       mockExplorer.search.mockResolvedValue(null);
 
@@ -212,7 +221,7 @@ describe("ConfigService", () => {
       await service.save(validConfig);
 
       expect(writeJson).toHaveBeenCalledWith(
-        testConfigPath,
+        getTestConfigPath(),
         validConfig,
         { spaces: 2 },
       );
@@ -225,13 +234,13 @@ describe("ConfigService", () => {
       const service = new ConfigService();
       await service.save(validConfig);
 
-      expect(ensureDir).toHaveBeenCalledWith(testConfigDir);
+      expect(ensureDir).toHaveBeenCalledWith(getTestConfigDir());
     });
   });
 
   describe("get/set", () => {
     it("should get config values", async () => {
-      mockExplorer.load.mockResolvedValue({ config: validConfig, filepath: testConfigPath });
+      mockExplorer.load.mockResolvedValue({ config: validConfig, filepath: getTestConfigPath() });
       mockExplorer.search.mockResolvedValue(null);
 
       const service = new ConfigService();
@@ -242,7 +251,7 @@ describe("ConfigService", () => {
     });
 
     it("should get nested config values via portRange", async () => {
-      mockExplorer.load.mockResolvedValue({ config: validConfig, filepath: testConfigPath });
+      mockExplorer.load.mockResolvedValue({ config: validConfig, filepath: getTestConfigPath() });
       mockExplorer.search.mockResolvedValue(null);
 
       const service = new ConfigService();
@@ -253,7 +262,7 @@ describe("ConfigService", () => {
     });
 
     it("should set and persist config values", async () => {
-      mockExplorer.load.mockResolvedValue({ config: validConfig, filepath: testConfigPath });
+      mockExplorer.load.mockResolvedValue({ config: validConfig, filepath: getTestConfigPath() });
       mockExplorer.search.mockResolvedValue(null);
       vi.mocked(ensureDir).mockResolvedValue(undefined as never);
       vi.mocked(writeJson).mockResolvedValue(undefined as never);
@@ -267,7 +276,7 @@ describe("ConfigService", () => {
     });
 
     it("should set portRange values", async () => {
-      mockExplorer.load.mockResolvedValue({ config: validConfig, filepath: testConfigPath });
+      mockExplorer.load.mockResolvedValue({ config: validConfig, filepath: getTestConfigPath() });
       mockExplorer.search.mockResolvedValue(null);
       vi.mocked(ensureDir).mockResolvedValue(undefined as never);
       vi.mocked(writeJson).mockResolvedValue(undefined as never);
@@ -294,7 +303,7 @@ describe("ConfigService", () => {
       const service = new ConfigService();
       const configPath = service.getConfigPath();
 
-      expect(configPath).toBe(testConfigPath);
+      expect(configPath).toBe(getTestConfigPath());
     });
   });
 
@@ -348,7 +357,7 @@ describe("ConfigService", () => {
         httpsKey: "/path/to/key.pem",
       };
 
-      mockExplorer.load.mockResolvedValue({ config: configWithHttps, filepath: testConfigPath });
+      mockExplorer.load.mockResolvedValue({ config: configWithHttps, filepath: getTestConfigPath() });
       mockExplorer.search.mockResolvedValue(null);
 
       const service = new ConfigService();
@@ -372,7 +381,7 @@ describe("ConfigService", () => {
     it("should override httpsCert and httpsKey from environment", async () => {
       process.env.SERVHERD_HTTPS_CERT = "/env/cert.pem";
       process.env.SERVHERD_HTTPS_KEY = "/env/key.pem";
-      mockExplorer.load.mockResolvedValue({ config: validConfig, filepath: testConfigPath });
+      mockExplorer.load.mockResolvedValue({ config: validConfig, filepath: getTestConfigPath() });
       mockExplorer.search.mockResolvedValue(null);
 
       const service = new ConfigService();
