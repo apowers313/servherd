@@ -21,7 +21,7 @@ vi.mock("../../../../src/services/registry.service.js", () => ({
 }));
 
 // Import after mocking
-const { executeStop } = await import("../../../../src/cli/commands/stop.js");
+const { executeStop, stopAction } = await import("../../../../src/cli/commands/stop.js");
 
 describe("stop command", () => {
   const mockPM2 = getMockPM2();
@@ -174,6 +174,77 @@ describe("stop command", () => {
       expect(results).toHaveLength(2);
       expect(results.every((r) => r.success)).toBe(true);
       expect(mockPM2.delete).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("stopAction CLI handler", () => {
+    let consoleSpy: ReturnType<typeof vi.spyOn>;
+    let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+    let originalExitCode: number | undefined;
+
+    beforeEach(() => {
+      consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      originalExitCode = process.exitCode;
+      process.exitCode = undefined;
+    });
+
+    afterEach(() => {
+      consoleSpy.mockRestore();
+      consoleErrorSpy.mockRestore();
+      process.exitCode = originalExitCode;
+    });
+
+    it("should show error when no name, --all, or --tag provided", async () => {
+      await stopAction(undefined, {});
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("Provide a server name"));
+      expect(process.exitCode).toBe(1);
+    });
+
+    it("should show JSON error when no options and --json flag", async () => {
+      await stopAction(undefined, { json: true });
+
+      expect(consoleSpy).toHaveBeenCalled();
+      const output = consoleSpy.mock.calls[0][0];
+      expect(JSON.parse(output)).toHaveProperty("error");
+      expect(process.exitCode).toBe(1);
+    });
+
+    it("should output formatted result on success", async () => {
+      mockRegistryService.findByName.mockReturnValue(existingServer);
+      mockPM2._setProcesses([createMockProcess({ name: existingServer.pm2Name })]);
+
+      await stopAction("brave-tiger", {});
+
+      expect(consoleSpy).toHaveBeenCalled();
+      expect(process.exitCode).toBeUndefined();
+    });
+
+    it("should output JSON result when --json flag is set", async () => {
+      mockRegistryService.findByName.mockReturnValue(existingServer);
+      mockPM2._setProcesses([createMockProcess({ name: existingServer.pm2Name })]);
+
+      await stopAction("brave-tiger", { json: true });
+
+      expect(consoleSpy).toHaveBeenCalled();
+      const output = consoleSpy.mock.calls[0][0];
+      const parsed = JSON.parse(output);
+      expect(parsed.success).toBe(true);
+      expect(parsed.data).toHaveProperty("results");
+    });
+
+    it("should set exitCode when any stop fails", async () => {
+      mockRegistryService.findByName.mockReturnValue(existingServer);
+      mockPM2.stop.mockImplementationOnce(
+        (_name: string, callback: (err?: Error) => void) => {
+          callback(new Error("PM2 error"));
+        },
+      );
+
+      await stopAction("brave-tiger", {});
+
+      expect(process.exitCode).toBe(1);
     });
   });
 });
