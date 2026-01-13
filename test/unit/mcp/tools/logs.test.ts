@@ -229,7 +229,7 @@ describe("servherd_logs MCP tool", () => {
       if ("flushed" in result) {
         expect(result.flushed).toBe(true);
         expect(result.all).toBe(true);
-        expect(result.message).toContain("all servers");
+        expect(result.message).toContain("servherd-managed servers");
       }
     });
   });

@@ -4,6 +4,7 @@ import type { ServerStatus } from "../../types/registry.js";
 import { formatServerInfo } from "../output/formatters.js";
 import { formatAsJson, formatErrorAsJson } from "../output/json-formatter.js";
 import { logger } from "../../utils/logger.js";
+import { ServherdError, ServherdErrorCode } from "../../types/errors.js";
 
 export interface InfoCommandOptions {
   name: string;
@@ -48,7 +49,10 @@ export async function executeInfo(options: InfoCommandOptions): Promise<InfoComm
     const server = registryService.findByName(options.name);
 
     if (!server) {
-      throw new Error(`Server "${options.name}" not found`);
+      throw new ServherdError(
+        ServherdErrorCode.SERVER_NOT_FOUND,
+        `Server "${options.name}" not found`,
+      );
     }
 
     // Connect to PM2 to get process details

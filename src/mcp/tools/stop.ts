@@ -15,6 +15,7 @@ export const stopToolSchema = z.object({
   name: z.string().optional().describe("Name of the server to stop, e.g., 'frontend-dev' or 'brave-tiger'"),
   all: z.boolean().optional().describe("Set to true to stop all managed servers"),
   tag: z.string().optional().describe("Stop all servers with this tag, e.g., 'frontend' or 'development'"),
+  force: z.boolean().optional().describe("Force stop using SIGKILL instead of SIGTERM"),
 });
 
 export type StopToolInput = z.infer<typeof stopToolSchema>;
@@ -34,6 +35,7 @@ export async function handleStopTool(input: StopToolInput): Promise<StopToolResu
     name: input.name,
     all: input.all,
     tag: input.tag,
+    force: input.force,
   });
 
   const successCount = results.filter((r) => r.success).length;

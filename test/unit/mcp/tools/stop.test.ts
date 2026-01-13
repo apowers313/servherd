@@ -174,5 +174,78 @@ describe("servherd_stop MCP tool", () => {
 
     // tag only
     expect(schema.safeParse({ tag: "frontend" }).success).toBe(true);
+
+    // force option
+    expect(schema.safeParse({ name: "test", force: true }).success).toBe(true);
+  });
+
+  describe("force option", () => {
+    it("should pass force flag to stop command", async () => {
+      mockRegistryService.findByName.mockReturnValue(existingServer);
+      mockPM2._setProcesses([
+        {
+          pid: 12345,
+          name: "servherd-brave-tiger",
+          pm2_env: {
+            status: "online",
+            pm_id: 0,
+            name: "servherd-brave-tiger",
+            pm_uptime: Date.now(),
+            created_at: Date.now(),
+            restart_time: 0,
+            unstable_restarts: 0,
+            pm_cwd: "/project",
+            pm_exec_path: "npm",
+            exec_mode: "fork",
+            node_args: [],
+            pm_out_log_path: "",
+            pm_err_log_path: "",
+            pm_pid_path: "",
+            env: {},
+          },
+        },
+      ]);
+
+      const result = await handleStopTool({ name: "brave-tiger", force: true });
+
+      expect(result.results).toHaveLength(1);
+      expect(result.results[0].success).toBe(true);
+      // When force is true, delete (SIGKILL) should be called instead of stop (SIGTERM)
+      expect(mockPM2.delete).toHaveBeenCalled();
+    });
+
+    it("should use SIGTERM (stop) when force is false", async () => {
+      mockRegistryService.findByName.mockReturnValue(existingServer);
+      mockPM2._setProcesses([
+        {
+          pid: 12345,
+          name: "servherd-brave-tiger",
+          pm2_env: {
+            status: "online",
+            pm_id: 0,
+            name: "servherd-brave-tiger",
+            pm_uptime: Date.now(),
+            created_at: Date.now(),
+            restart_time: 0,
+            unstable_restarts: 0,
+            pm_cwd: "/project",
+            pm_exec_path: "npm",
+            exec_mode: "fork",
+            node_args: [],
+            pm_out_log_path: "",
+            pm_err_log_path: "",
+            pm_pid_path: "",
+            env: {},
+          },
+        },
+      ]);
+
+      const result = await handleStopTool({ name: "brave-tiger", force: false });
+
+      expect(result.results).toHaveLength(1);
+      expect(result.results[0].success).toBe(true);
+      // When force is false, stop (SIGTERM) should be called
+      expect(mockPM2.stop).toHaveBeenCalled();
+    });
   });
 });

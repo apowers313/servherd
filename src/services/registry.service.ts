@@ -3,9 +3,11 @@ import * as path from "path";
 import * as os from "os";
 import * as crypto from "crypto";
 import micromatch from "micromatch";
+import lockfile from "proper-lockfile";
 import { RegistrySchema, type Registry, type ServerEntry, type ServerFilter, type AddServerOptions } from "../types/registry.js";
 import { generateName } from "../utils/names.js";
 import { logger } from "../utils/logger.js";
+import { ServherdError, ServherdErrorCode } from "../types/errors.js";
 
 const DEFAULT_REGISTRY: Registry = {
   version: "1",
@@ -54,11 +56,30 @@ export class RegistryService {
   }
 
   /**
-   * Save registry to file
+   * Save registry to file with file locking to prevent corruption
    */
   async save(): Promise<void> {
+    if (!this.registry) {
+      throw new ServherdError(ServherdErrorCode.REGISTRY_CORRUPT, "Registry not loaded");
+    }
+
     await ensureDir(this.registryDir);
-    await writeJson(this.registryPath, this.registry, { spaces: 2 });
+
+    // Create file if it doesn't exist (lockfile requires existing file)
+    if (!await pathExists(this.registryPath)) {
+      await writeJson(this.registryPath, { version: "1.0.0", servers: [] }, { spaces: 2 });
+    }
+
+    const release = await lockfile.lock(this.registryPath, {
+      retries: { retries: 3, minTimeout: 100, maxTimeout: 1000 },
+      stale: 10000, // 10 seconds
+    });
+
+    try {
+      await writeJson(this.registryPath, this.registry, { spaces: 2 });
+    } finally {
+      await release();
+    }
   }
 
   /**

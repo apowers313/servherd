@@ -1,4 +1,5 @@
 import { confirm, input, select } from "@inquirer/prompts";
+import { pathExists } from "fs-extra/esm";
 import { ConfigService } from "../../services/config.service.js";
 import { RegistryService } from "../../services/registry.service.js";
 import type { GlobalConfig } from "../../types/config.js";
@@ -320,6 +321,17 @@ export async function executeConfig(options: ConfigCommandOptions): Promise<Conf
       parsedValue = num;
     }
 
+    // Validate HTTPS certificate/key paths exist
+    if ((key === "httpsCert" || key === "httpsKey") && options.value && options.value.length > 0) {
+      const fileExists = await pathExists(options.value);
+      if (!fileExists) {
+        return {
+          updated: false,
+          error: `File not found: ${options.value}`,
+        };
+      }
+    }
+
     // Handle nested keys vs top-level keys
     let updatedConfig: GlobalConfig;
     if (key.includes(".")) {
@@ -470,8 +482,35 @@ export async function configAction(options: {
   add?: string;
   remove?: string;
   listVars?: boolean;
+  refresh?: string;
+  refreshAll?: boolean;
+  tag?: string;
+  dryRun?: boolean;
 }): Promise<void> {
   try {
+    // Check if any explicit option was provided
+    const hasOptions = options.show || options.get || options.set ||
+                       options.reset || options.refresh || options.refreshAll ||
+                       options.add || options.remove || options.listVars;
+
+    // If no options provided, run wizard in interactive mode, or show config in CI mode
+    if (!hasOptions) {
+      if (CIDetector.isCI()) {
+        // In CI, default to showing config (no interactive wizard)
+        const result = await executeConfig({ show: true });
+        if (options.json) {
+          console.log(formatAsJson(result));
+        } else {
+          console.log(formatConfigResult(result));
+        }
+        return;
+      } else {
+        // In interactive mode, run the wizard
+        await runConfigWizard();
+        return;
+      }
+    }
+
     const result = await executeConfig(options);
 
     if (options.json) {

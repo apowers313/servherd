@@ -70,6 +70,7 @@ import {
 } from "./resources/servers.js";
 
 import { logger } from "../utils/logger.js";
+import { getVersion } from "../utils/version.js";
 
 export interface MCPServerOptions {
   name?: string;
@@ -81,7 +82,7 @@ export interface MCPServerOptions {
  */
 export function createMCPServer(options: MCPServerOptions = {}): McpServer {
   const name = options.name || "servherd";
-  const version = options.version || "0.1.0";
+  const version = options.version || getVersion();
 
   const server = new McpServer(
     { name, version },

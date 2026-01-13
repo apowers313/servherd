@@ -4,6 +4,7 @@ import boxen from "boxen";
 import type { ServerEntry, ServerStatus } from "../../types/registry.js";
 import type { InfoCommandResult } from "../commands/info.js";
 import type { LogsCommandResult } from "../commands/logs.js";
+import { formatUptime as formatUptimeShared, formatBytes as formatBytesShared } from "../../utils/format.js";
 
 /**
  * Format server status with color
@@ -254,40 +255,20 @@ function truncatePath(path: string, maxLength: number): string {
 
 /**
  * Format bytes to human readable string
+ * Uses shared utility from utils/format.ts
  */
 function formatBytes(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  } else if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  } else if (bytes < 1024 * 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  } else {
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-  }
+  return formatBytesShared(bytes);
 }
 
 /**
  * Format uptime to human readable string
+ * Takes a start timestamp and formats the duration since that time
+ * Uses shared utility from utils/format.ts
  */
-function formatUptime(uptimeMs: number): string {
-  const now = Date.now();
-  const durationMs = now - uptimeMs;
-
-  const seconds = Math.floor(durationMs / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-
-  if (days > 0) {
-    return `${days}d ${hours % 24}h`;
-  } else if (hours > 0) {
-    return `${hours}h ${minutes % 60}m`;
-  } else if (minutes > 0) {
-    return `${minutes}m ${seconds % 60}s`;
-  } else {
-    return `${seconds}s`;
-  }
+function formatUptime(startTimestamp: number): string {
+  const durationMs = Date.now() - startTimestamp;
+  return formatUptimeShared(durationMs);
 }
 
 /**

@@ -179,4 +179,85 @@ describe("servherd_start MCP tool", () => {
 
     expect(result.success).toBe(true);
   });
+
+  describe("port/protocol options", () => {
+    it("should accept port option in schema", async () => {
+      const schema = startToolSchema;
+      const result = schema.safeParse({
+        command: "npm start",
+        port: 8080,
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("should accept protocol option in schema", async () => {
+      const schema = startToolSchema;
+      const result = schema.safeParse({
+        command: "npm start",
+        protocol: "https",
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("should reject invalid protocol", async () => {
+      const schema = startToolSchema;
+      const result = schema.safeParse({
+        command: "npm start",
+        protocol: "ftp",
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("should use explicit port when provided", async () => {
+      const newServer: ServerEntry = {
+        id: "test-id",
+        name: "brave-tiger",
+        command: "npm start",
+        resolvedCommand: "npm start",
+        cwd: "/project",
+        port: 8080,
+        protocol: "http",
+        hostname: "localhost",
+        env: {},
+        createdAt: new Date().toISOString(),
+        pm2Name: "servherd-brave-tiger",
+      };
+
+      mockRegistryService.addServer.mockResolvedValue(newServer);
+
+      const result = await handleStartTool({
+        command: "npm start",
+        cwd: "/project",
+        port: 8080,
+      });
+
+      expect(result.port).toBe(8080);
+    });
+
+    it("should use explicit protocol when provided", async () => {
+      const newServer: ServerEntry = {
+        id: "test-id",
+        name: "brave-tiger",
+        command: "npm start",
+        resolvedCommand: "npm start",
+        cwd: "/project",
+        port: 3456,
+        protocol: "https",
+        hostname: "localhost",
+        env: {},
+        createdAt: new Date().toISOString(),
+        pm2Name: "servherd-brave-tiger",
+      };
+
+      mockRegistryService.addServer.mockResolvedValue(newServer);
+
+      const result = await handleStartTool({
+        command: "npm start",
+        cwd: "/project",
+        protocol: "https",
+      });
+
+      expect(result.url).toMatch(/^https:/);
+    });
+  });
 });

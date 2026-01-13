@@ -12,6 +12,7 @@ import {
   createConfigSnapshot,
   detectDrift,
 } from "../../utils/config-drift.js";
+import { ServherdError, ServherdErrorCode } from "../../types/errors.js";
 
 export interface RestartCommandOptions {
   name?: string;
@@ -88,11 +89,17 @@ export async function executeRestart(options: RestartCommandOptions): Promise<Re
     } else if (options.name) {
       const server = registryService.findByName(options.name);
       if (!server) {
-        throw new Error(`Server "${options.name}" not found`);
+        throw new ServherdError(
+          ServherdErrorCode.SERVER_NOT_FOUND,
+          `Server "${options.name}" not found`,
+        );
       }
       servers = [server];
     } else {
-      throw new Error("Either --name, --all, or --tag must be specified");
+      throw new ServherdError(
+        ServherdErrorCode.COMMAND_MISSING_ARGUMENT,
+        "Either --name, --all, or --tag must be specified",
+      );
     }
 
     // Restart all matched servers

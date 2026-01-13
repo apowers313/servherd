@@ -1,6 +1,9 @@
 import detectPort from "detect-port";
+import { pathExists, readJson, writeJson, ensureDir } from "fs-extra/esm";
+import * as path from "path";
 import type { GlobalConfig } from "../types/config.js";
 import { ServherdError, ServherdErrorCode } from "../types/errors.js";
+import { logger } from "../utils/logger.js";
 
 /**
  * Result of port assignment, including whether a different port was assigned
@@ -11,15 +14,25 @@ export interface PortAssignmentResult {
 }
 
 /**
+ * CI ports file schema for persistence
+ */
+interface CiPortsData {
+  ports: number[];
+  timestamp: number;
+}
+
+/**
  * Service for deterministic port generation and port availability checking
  * using FNV-1a hashing and detect-port library
  */
 export class PortService {
   private portRange: { min: number; max: number };
   private usedPorts: Set<number> = new Set();
+  private tempDir: string;
 
   constructor(config: GlobalConfig) {
     this.portRange = config.portRange;
+    this.tempDir = config.tempDir;
   }
 
   /**
@@ -35,6 +48,62 @@ export class PortService {
    */
   clearUsedPorts(): void {
     this.usedPorts.clear();
+  }
+
+  /**
+   * Get the set of CI used ports (for testing and inspection)
+   * @returns Set of port numbers marked as used in CI mode
+   */
+  getCiUsedPorts(): Set<number> {
+    return new Set(this.usedPorts);
+  }
+
+  /**
+   * Load CI used ports from persistence file
+   * Cleans up stale entries (older than 1 hour)
+   */
+  async loadCiUsedPorts(): Promise<void> {
+    const ciPortsFile = path.join(this.tempDir, "ci-ports.json");
+
+    try {
+      if (await pathExists(ciPortsFile)) {
+        const data = await readJson(ciPortsFile) as CiPortsData;
+
+        // Clean up stale entries (older than 1 hour)
+        const ONE_HOUR = 3600000;
+        if (Date.now() - data.timestamp < ONE_HOUR) {
+          for (const port of data.ports) {
+            this.usedPorts.add(port);
+          }
+          logger.debug({ ports: data.ports }, "Loaded CI ports from file");
+        } else {
+          logger.debug("CI ports file is stale, ignoring");
+        }
+      }
+    } catch (error) {
+      logger.warn({ error }, "Failed to load CI ports file, starting fresh");
+      // Continue with empty set - don't fail on corrupted file
+    }
+  }
+
+  /**
+   * Save CI used ports to persistence file
+   */
+  async saveCiUsedPorts(): Promise<void> {
+    const ciPortsFile = path.join(this.tempDir, "ci-ports.json");
+
+    try {
+      await ensureDir(this.tempDir);
+      const data: CiPortsData = {
+        ports: Array.from(this.usedPorts),
+        timestamp: Date.now(),
+      };
+      await writeJson(ciPortsFile, data);
+      logger.debug({ ports: data.ports }, "Saved CI ports to file");
+    } catch (error) {
+      logger.warn({ error }, "Failed to save CI ports file");
+      // Don't fail the operation if we can't persist
+    }
   }
 
   /**

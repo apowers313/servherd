@@ -51,6 +51,12 @@ vi.mock("../../../../src/utils/ci-detector.js", () => ({
   },
 }));
 
+// Mock pathExists for HTTPS path validation
+const mockPathExists = vi.fn();
+vi.mock("fs-extra/esm", () => ({
+  pathExists: (...args: unknown[]) => mockPathExists(...args),
+}));
+
 // Import after mocking
 const { executeConfig, runConfigWizard } = await import("../../../../src/cli/commands/config.js");
 
@@ -75,6 +81,7 @@ describe("config command", () => {
     mockRegistryService.load.mockResolvedValue({ version: "1", servers: [] });
     mockRegistryService.listServers.mockReturnValue([]);
     mockExecuteRefresh.mockResolvedValue([]);
+    mockPathExists.mockResolvedValue(true);
   });
 
   describe("--show", () => {

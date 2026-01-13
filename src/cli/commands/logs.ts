@@ -73,11 +73,11 @@ export async function executeFlush(options: LogsCommandOptions): Promise<FlushCo
     await processService.connect();
 
     if (options.all) {
-      await processService.flush();
+      await processService.flushAll();
       return {
         flushed: true,
         all: true,
-        message: "Logs flushed for all servers",
+        message: "Logs flushed for all servherd-managed servers",
       };
     }
 

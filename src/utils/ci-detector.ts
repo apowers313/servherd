@@ -30,6 +30,12 @@ const CI_ENVIRONMENTS: CIEnvironment[] = [
   { name: "Buildkite", envVar: "BUILDKITE" },
   { name: "Azure Pipelines", envVar: "AZURE_PIPELINES" },
   { name: "TeamCity", envVar: "TEAMCITY_VERSION" },
+  { name: "Azure DevOps", envVar: "TF_BUILD" },
+  { name: "AWS CodeBuild", envVar: "CODEBUILD_BUILD_ID" },
+  { name: "Drone CI", envVar: "DRONE" },
+  { name: "Bitbucket Pipelines", envVar: "BITBUCKET_COMMIT" },
+  { name: "Semaphore", envVar: "SEMAPHORE" },
+  { name: "Render", envVar: "RENDER" },
 ];
 
 export class CIDetector {

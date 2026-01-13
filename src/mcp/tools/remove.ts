@@ -16,6 +16,7 @@ export const removeToolSchema = z.object({
   name: z.string().optional().describe("Name of the server to remove, e.g., 'frontend-dev' or 'brave-tiger'"),
   all: z.boolean().optional().describe("Set to true to remove all managed servers"),
   tag: z.string().optional().describe("Remove all servers with this tag, e.g., 'temporary' or 'test'"),
+  force: z.boolean().optional().describe("Skip confirmation (always true in MCP context)"),
 });
 
 export type RemoveToolInput = z.infer<typeof removeToolSchema>;

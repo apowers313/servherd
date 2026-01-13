@@ -309,16 +309,32 @@ describe("ProcessService", () => {
       expect(mockPM2.flush).toHaveBeenCalledWith("servherd-test", expect.any(Function));
     });
 
-    it("should flush all logs when no name specified", async () => {
+    it("should throw when not connected", async () => {
+      await expect(service.flush("test")).rejects.toThrow("Not connected");
+    });
+  });
+
+  describe("flushAll", () => {
+    it("should flush logs for all servherd processes only", async () => {
       await service.connect();
 
-      await service.flush();
+      // Add a mix of servherd and non-servherd processes
+      const mockServherd1 = createMockProcess({ name: "servherd-app1" });
+      const mockServherd2 = createMockProcess({ name: "servherd-app2" });
+      const mockOther = createMockProcess({ name: "other-process" });
+      mockPM2._setProcesses([mockServherd1, mockServherd2, mockOther]);
 
-      expect(mockPM2.flush).toHaveBeenCalledWith("all", expect.any(Function));
+      await service.flushAll();
+
+      // Should only flush servherd processes, not "other-process"
+      expect(mockPM2.flush).toHaveBeenCalledWith("servherd-app1", expect.any(Function));
+      expect(mockPM2.flush).toHaveBeenCalledWith("servherd-app2", expect.any(Function));
+      expect(mockPM2.flush).not.toHaveBeenCalledWith("other-process", expect.any(Function));
+      expect(mockPM2.flush).not.toHaveBeenCalledWith("all", expect.any(Function));
     });
 
     it("should throw when not connected", async () => {
-      await expect(service.flush("test")).rejects.toThrow("Not connected");
+      await expect(service.flushAll()).rejects.toThrow("Not connected");
     });
   });
 });

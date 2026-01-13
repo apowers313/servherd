@@ -5,6 +5,8 @@ import type { ServerEntry } from "../../types/registry.js";
 import { formatRemoveResult, type RemoveResult } from "../output/formatters.js";
 import { formatAsJson, formatErrorAsJson } from "../output/json-formatter.js";
 import { logger } from "../../utils/logger.js";
+import { CIDetector } from "../../utils/ci-detector.js";
+import { ServherdError, ServherdErrorCode } from "../../types/errors.js";
 
 export interface RemoveCommandOptions {
   name?: string;
@@ -50,6 +52,14 @@ export async function executeRemove(options: RemoveCommandOptions): Promise<Remo
 
     // Ask for confirmation unless --force is specified
     if (!options.force) {
+      // In CI mode, require --force to prevent hanging on confirmation prompt
+      if (CIDetector.isCI()) {
+        throw new ServherdError(
+          ServherdErrorCode.INTERACTIVE_NOT_AVAILABLE,
+          "Remove requires --force flag in CI mode to prevent hanging on confirmation prompt",
+        );
+      }
+
       const serverNames = serversToRemove.map((s) => s.name).join(", ");
       const message = serversToRemove.length === 1
         ? `Are you sure you want to remove server "${serversToRemove[0].name}"?`

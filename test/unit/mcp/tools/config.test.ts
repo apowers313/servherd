@@ -240,4 +240,30 @@ describe("servherd_config MCP tool", () => {
       expect(result.message).toContain("No custom variables");
     });
   });
+
+  describe("refresh options schema validation", () => {
+    it("should validate refresh option in schema", () => {
+      const schema = configToolSchema;
+
+      expect(schema.safeParse({ refresh: "my-server" }).success).toBe(true);
+    });
+
+    it("should validate refreshAll option in schema", () => {
+      const schema = configToolSchema;
+
+      expect(schema.safeParse({ refreshAll: true }).success).toBe(true);
+    });
+
+    it("should validate dryRun option in schema", () => {
+      const schema = configToolSchema;
+
+      expect(schema.safeParse({ refreshAll: true, dryRun: true }).success).toBe(true);
+    });
+
+    it("should validate tag option for refresh in schema", () => {
+      const schema = configToolSchema;
+
+      expect(schema.safeParse({ tag: "frontend", refreshAll: true }).success).toBe(true);
+    });
+  });
 });

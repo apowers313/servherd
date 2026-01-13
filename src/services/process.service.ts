@@ -153,27 +153,38 @@ export class ProcessService {
 
   /**
    * Get process description
+   * Returns undefined for "not found" errors, re-throws other errors
    */
   async describe(name: string): Promise<PM2ProcessDescription | undefined> {
     this.ensureConnected();
 
-    return new Promise((resolve, reject) => {
-      pm2.describe(name, (err, procDesc) => {
-        if (err) {
-          logger.error({ error: err, name }, "Failed to describe process");
-          reject(err);
-          return;
-        }
+    try {
+      return await new Promise<PM2ProcessDescription | undefined>((resolve, reject) => {
+        pm2.describe(name, (err, procDesc) => {
+          if (err) {
+            reject(err);
+            return;
+          }
 
-        const desc = procDesc as PM2ProcessDescription[] | undefined;
-        if (!desc || desc.length === 0) {
-          resolve(undefined);
-          return;
-        }
+          const desc = procDesc as PM2ProcessDescription[] | undefined;
+          if (!desc || desc.length === 0) {
+            resolve(undefined);
+            return;
+          }
 
-        resolve(desc[0]);
+          resolve(desc[0]);
+        });
       });
-    });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // Only suppress "not found" errors - these are expected when querying non-existent processes
+      if (message.includes("not found") || message.includes("process name not found")) {
+        return undefined;
+      }
+      // Re-throw all other errors (connection errors, IPC errors, etc.)
+      logger.error({ error, name }, "Failed to describe process");
+      throw error;
+    }
   }
 
   /**
@@ -239,23 +250,36 @@ export class ProcessService {
   }
 
   /**
-   * Flush (clear) logs for a process or all processes.
-   * @param name - Process name to flush logs for, or undefined/all for all processes
+   * Flush (clear) logs for a specific process.
+   * @param name - Process name to flush logs for (required)
    */
-  async flush(name?: string): Promise<void> {
+  async flush(name: string): Promise<void> {
     this.ensureConnected();
 
     return new Promise((resolve, reject) => {
-      const pm2Name = name ?? "all";
-      pm2.flush(pm2Name, (err) => {
+      pm2.flush(name, (err) => {
         if (err) {
-          logger.error({ error: err, name: pm2Name }, "Failed to flush logs");
+          logger.error({ error: err, name }, "Failed to flush logs");
           reject(err);
           return;
         }
-        logger.info({ name: pm2Name }, "Logs flushed");
+        logger.info({ name }, "Logs flushed");
         resolve();
       });
     });
+  }
+
+  /**
+   * Flush (clear) logs for all servherd-managed processes.
+   * This only affects processes with the servherd prefix, not other PM2 processes.
+   */
+  async flushAll(): Promise<void> {
+    this.ensureConnected();
+
+    const processes = await this.listServherdProcesses();
+    for (const proc of processes) {
+      await this.flush(proc.name);
+    }
+    logger.info({ count: processes.length }, "Flushed logs for all servherd processes");
   }
 }

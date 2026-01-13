@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { executeInfo } from "../../cli/commands/info.js";
 import type { InfoCommandResult } from "../../cli/commands/info.js";
+import { formatUptime as formatUptimeShared, formatBytes as formatBytesShared } from "../../utils/format.js";
 
 export const infoToolName = "servherd_info";
 
@@ -41,35 +42,29 @@ export interface InfoToolResult {
   errLogPath?: string;
 }
 
-function formatUptime(ms: number | undefined): string | undefined {
-  if (ms === undefined) {
+/**
+ * Format uptime from a start timestamp
+ * Uses shared utility from utils/format.ts
+ */
+function formatUptime(startTimestamp: number | undefined): string | undefined {
+  if (startTimestamp === undefined) {
     return undefined;
   }
 
-  const seconds = Math.floor((Date.now() - ms) / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-
-  if (days > 0) {
-    return `${days}d ${hours % 24}h`;
-  }
-  if (hours > 0) {
-    return `${hours}h ${minutes % 60}m`;
-  }
-  if (minutes > 0) {
-    return `${minutes}m ${seconds % 60}s`;
-  }
-  return `${seconds}s`;
+  const durationMs = Date.now() - startTimestamp;
+  return formatUptimeShared(durationMs);
 }
 
+/**
+ * Format memory in bytes to human readable string
+ * Uses shared utility from utils/format.ts
+ */
 function formatMemory(bytes: number | undefined): string | undefined {
   if (bytes === undefined) {
     return undefined;
   }
 
-  const mb = bytes / 1024 / 1024;
-  return `${mb.toFixed(1)} MB`;
+  return formatBytesShared(bytes);
 }
 
 export async function handleInfoTool(input: InfoToolInput): Promise<InfoToolResult> {

@@ -367,7 +367,7 @@ describe("formatters", () => {
       const result = formatServerInfo(info);
       expect(result).toContain("12345");
       expect(result).toContain("Restarts");
-      expect(result).toContain("50.0 MB");
+      expect(result).toContain("50.00 MB");
       expect(result).toContain("2.5%");
       expect(result).toContain("frontend");
       expect(result).toContain("dev");
@@ -383,11 +383,11 @@ describe("formatters", () => {
 
       // Test KB
       const kbMemory: InfoCommandResult = { ...baseInfo, memory: 5120 };
-      expect(formatServerInfo(kbMemory)).toContain("5.0 KB");
+      expect(formatServerInfo(kbMemory)).toContain("5.00 KB");
 
       // Test GB
       const gbMemory: InfoCommandResult = { ...baseInfo, memory: 2147483648 };
-      expect(formatServerInfo(gbMemory)).toContain("2.0 GB");
+      expect(formatServerInfo(gbMemory)).toContain("2.00 GB");
     });
 
     it("should format uptime in different units", () => {

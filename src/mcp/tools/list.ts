@@ -13,6 +13,7 @@ export const listToolDescription =
 
 export const listToolSchema = z.object({
   running: z.boolean().optional().describe("Set to true to only show servers that are currently running"),
+  stopped: z.boolean().optional().describe("Set to true to only show servers that are currently stopped"),
   tag: z.string().optional().describe("Filter by tag, e.g., 'frontend' or 'api'"),
   cwd: z.string().optional().describe("Filter by working directory, e.g., '/home/user/projects/my-app'"),
   cmd: z.string().optional().describe("Filter by command pattern using glob syntax, e.g., '*storybook*' or '*vite*'"),
@@ -40,6 +41,7 @@ export interface ListToolResult {
 export async function handleListTool(input: ListToolInput): Promise<ListToolResult> {
   const result = await executeList({
     running: input.running,
+    stopped: input.stopped,
     tag: input.tag,
     cwd: input.cwd,
     cmd: input.cmd,

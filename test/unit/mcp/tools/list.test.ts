@@ -242,4 +242,71 @@ describe("servherd_list MCP tool", () => {
       cmd: "*npm*",
     });
   });
+
+  describe("stopped filter", () => {
+    it("should filter to only stopped servers when stopped=true", async () => {
+      mockRegistryService.listServers.mockReturnValue([server1, server2]);
+      mockPM2._setProcesses([
+        {
+          pid: 12345,
+          name: "servherd-brave-tiger",
+          pm2_env: {
+            status: "online",
+            pm_id: 0,
+            name: "servherd-brave-tiger",
+            pm_uptime: Date.now(),
+            created_at: Date.now(),
+            restart_time: 0,
+            unstable_restarts: 0,
+            pm_cwd: "/project1",
+            pm_exec_path: "npm",
+            exec_mode: "fork",
+            node_args: [],
+            pm_out_log_path: "",
+            pm_err_log_path: "",
+            pm_pid_path: "",
+            env: {},
+          },
+        },
+        {
+          pid: 12346,
+          name: "servherd-calm-panda",
+          pm2_env: {
+            status: "stopped",
+            pm_id: 1,
+            name: "servherd-calm-panda",
+            pm_uptime: Date.now(),
+            created_at: Date.now(),
+            restart_time: 0,
+            unstable_restarts: 0,
+            pm_cwd: "/project2",
+            pm_exec_path: "npm",
+            exec_mode: "fork",
+            node_args: [],
+            pm_out_log_path: "",
+            pm_err_log_path: "",
+            pm_pid_path: "",
+            env: {},
+          },
+        },
+      ]);
+
+      const result = await handleListTool({ stopped: true });
+
+      expect(result.servers).toHaveLength(1);
+      expect(result.servers[0].status).toBe("stopped");
+      expect(result.servers[0].name).toBe("calm-panda");
+    });
+
+    it("should validate stopped option in schema", () => {
+      const schema = listToolSchema;
+      expect(schema.safeParse({ stopped: true }).success).toBe(true);
+      expect(schema.safeParse({ stopped: false }).success).toBe(true);
+    });
+
+    it("should not allow both running and stopped filters", async () => {
+      await expect(handleListTool({ running: true, stopped: true }))
+        .rejects.toThrow("Cannot specify both --running and --stopped");
+    });
+  });
 });

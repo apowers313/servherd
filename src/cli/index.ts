@@ -8,6 +8,7 @@ import { restartAction } from "./commands/restart.js";
 import { removeAction } from "./commands/remove.js";
 import { configAction } from "./commands/config.js";
 import { mcpAction } from "./commands/mcp.js";
+import { getVersion } from "../utils/version.js";
 
 /**
  * Create the CLI program
@@ -18,7 +19,7 @@ export function createProgram(): Command {
   program
     .name("servherd")
     .description("CLI tool and MCP server for managing development servers across projects")
-    .version("0.1.0")
+    .version(getVersion())
     .option("--json", "Output results as JSON")
     .option("--ci", "Force CI mode behavior (sequential port allocation, no interactive prompts)")
     .option("--no-ci", "Force non-CI mode behavior (overrides CI environment detection)");

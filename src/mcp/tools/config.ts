@@ -23,6 +23,10 @@ export const configToolSchema = z.object({
   addValue: z.string().optional().describe("Value for the custom variable being added"),
   remove: z.string().optional().describe("Name of a custom template variable to remove"),
   listVars: z.boolean().optional().describe("Set to true to list all custom template variables"),
+  refresh: z.string().optional().describe("Refresh a specific server's config by name"),
+  refreshAll: z.boolean().optional().describe("Refresh all servers with config drift"),
+  tag: z.string().optional().describe("Filter servers by tag for refresh operations"),
+  dryRun: z.boolean().optional().describe("Preview refresh without executing (use with refresh/refreshAll)"),
 });
 
 export type ConfigToolInput = z.infer<typeof configToolSchema>;

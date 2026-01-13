@@ -300,8 +300,9 @@ describe("logs command", () => {
 
       expect(result.flushed).toBe(true);
       expect(result.all).toBe(true);
-      expect(result.message).toContain("all servers");
-      expect(mockPM2.flush).toHaveBeenCalledWith("all", expect.any(Function));
+      expect(result.message).toContain("servherd-managed servers");
+      // flushAll now calls flush for each servherd process individually
+      expect(mockPM2.flush).toHaveBeenCalledWith(existingServer.pm2Name, expect.any(Function));
     });
 
     it("should throw when neither name nor --all is provided", async () => {
