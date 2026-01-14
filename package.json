@@ -1,6 +1,6 @@
 {
   "name": "servherd",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "CLI tool and MCP server for managing development servers across projects",
   "author": "Adam Powers <apowers@ato.ms>",
   "license": "MIT",
