@@ -36,6 +36,9 @@ Thumbs.db
 # servherd runtime files
 .servherd/
 
+# Playwright MCP screenshots
+.playwright-mcp/
+
 # Logo exploration options (keep final assets only)
 assets/options/
 

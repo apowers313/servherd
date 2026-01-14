@@ -41,7 +41,7 @@ export type GlobalConfig = z.infer<typeof GlobalConfigSchema>;
 
 export const DEFAULT_CONFIG: GlobalConfig = {
   version: "1",
-  hostname: "localhost",
+  hostname: "0.0.0.0",
   protocol: "http",
   portRange: { min: 3000, max: 9999 },
   tempDir: "/tmp/servherd",

@@ -34,6 +34,14 @@ vi.mock("../../../../src/services/registry.service.js", () => ({
   RegistryService: vi.fn().mockImplementation(() => mockRegistryService),
 }));
 
+// Mock CIDetector
+const mockIsCI = vi.fn();
+vi.mock("../../../../src/utils/ci-detector.js", () => ({
+  CIDetector: {
+    isCI: () => mockIsCI(),
+  },
+}));
+
 // Import after mocking
 const { handleStartTool, startToolName, startToolDescription, startToolSchema } =
   await import("../../../../src/mcp/tools/start.js");
@@ -44,6 +52,9 @@ describe("servherd_start MCP tool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPM2._reset();
+
+    // Setup default CI mode mock (not in CI by default)
+    mockIsCI.mockReturnValue(false);
 
     // Setup default config mock
     mockConfigService.load.mockResolvedValue({
@@ -258,6 +269,66 @@ describe("servherd_start MCP tool", () => {
       });
 
       expect(result.url).toMatch(/^https:/);
+    });
+  });
+
+  describe("CI mode", () => {
+    it("should pass ciMode: true to configService.load when in CI environment", async () => {
+      // Simulate CI environment
+      mockIsCI.mockReturnValue(true);
+
+      const newServer: ServerEntry = {
+        id: "test-id",
+        name: "brave-tiger",
+        command: "npm start",
+        resolvedCommand: "npm start",
+        cwd: "/project",
+        port: 3456,
+        protocol: "http",
+        hostname: "localhost",
+        env: {},
+        createdAt: new Date().toISOString(),
+        pm2Name: "servherd-brave-tiger",
+      };
+
+      mockRegistryService.addServer.mockResolvedValue(newServer);
+
+      await handleStartTool({
+        command: "npm start",
+        cwd: "/project",
+      });
+
+      // Verify configService.load was called with ciMode: true
+      expect(mockConfigService.load).toHaveBeenCalledWith({ ciMode: true });
+    });
+
+    it("should pass ciMode: false to configService.load when not in CI environment", async () => {
+      // Simulate non-CI environment
+      mockIsCI.mockReturnValue(false);
+
+      const newServer: ServerEntry = {
+        id: "test-id",
+        name: "brave-tiger",
+        command: "npm start",
+        resolvedCommand: "npm start",
+        cwd: "/project",
+        port: 3456,
+        protocol: "http",
+        hostname: "localhost",
+        env: {},
+        createdAt: new Date().toISOString(),
+        pm2Name: "servherd-brave-tiger",
+      };
+
+      mockRegistryService.addServer.mockResolvedValue(newServer);
+
+      await handleStartTool({
+        command: "npm start",
+        cwd: "/project",
+      });
+
+      // Verify configService.load was called with ciMode: false
+      expect(mockConfigService.load).toHaveBeenCalledWith({ ciMode: false });
     });
   });
 });

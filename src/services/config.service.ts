@@ -6,6 +6,22 @@ import * as os from "os";
 import { DEFAULT_CONFIG, GlobalConfigSchema, type GlobalConfig } from "../types/config.js";
 import { logger } from "../utils/logger.js";
 
+/**
+ * Options for loading configuration
+ */
+export interface ConfigLoadOptions {
+  /**
+   * Directory to search for project-local config files
+   */
+  searchFrom?: string;
+  /**
+   * When true, skip loading config files and use DEFAULT_CONFIG.
+   * Environment variable overrides are still applied.
+   * This ensures CI builds are consistent and don't depend on local config.
+   */
+  ciMode?: boolean;
+}
+
 const MODULE_NAME = "servherd";
 
 /**
@@ -56,26 +72,43 @@ export class ConfigService {
    * 2. Project-local config file (if found)
    * 3. Global config file (~/.servherd/config.json)
    * 4. Default values (lowest)
+   *
+   * In CI mode, config files are skipped and only DEFAULT_CONFIG + env overrides are used.
+   * This ensures CI builds are consistent and don't depend on local developer config.
+   *
+   * @param options - Load options (searchFrom path and/or ciMode flag)
+   *                  For backwards compatibility, can also pass a string for searchFrom
    */
-  async load(searchFrom?: string): Promise<GlobalConfig> {
+  async load(options?: string | ConfigLoadOptions): Promise<GlobalConfig> {
+    // Handle backwards compatibility: string argument means searchFrom
+    const opts: ConfigLoadOptions = typeof options === "string"
+      ? { searchFrom: options }
+      : options ?? {};
+
     let baseConfig = { ...DEFAULT_CONFIG };
 
-    // First, try to load global config
-    const globalResult = await this.loadGlobalConfig();
-    if (globalResult) {
-      baseConfig = this.mergeConfigs(baseConfig, globalResult);
-    }
+    // In CI mode, skip loading config files entirely
+    if (opts.ciMode) {
+      logger.debug("CI mode: skipping config files, using defaults");
+    } else {
+      // First, try to load global config
+      const globalResult = await this.loadGlobalConfig();
+      if (globalResult) {
+        baseConfig = this.mergeConfigs(baseConfig, globalResult);
+      }
 
-    // Then, search for project-local config (overrides global)
-    const projectResult = await this.searchProjectConfig(searchFrom);
-    if (projectResult?.config && typeof projectResult.config === "object") {
-      // Accept partial configs without strict validation - merge will handle defaults
-      baseConfig = this.mergeConfigs(baseConfig, projectResult.config);
-      this.loadedFilepath = projectResult.filepath;
-      logger.debug({ filepath: projectResult.filepath }, "Loaded project config");
+      // Then, search for project-local config (overrides global)
+      const projectResult = await this.searchProjectConfig(opts.searchFrom);
+      if (projectResult?.config && typeof projectResult.config === "object") {
+        // Accept partial configs without strict validation - merge will handle defaults
+        baseConfig = this.mergeConfigs(baseConfig, projectResult.config);
+        this.loadedFilepath = projectResult.filepath;
+        logger.debug({ filepath: projectResult.filepath }, "Loaded project config");
+      }
     }
 
     // Finally, apply environment variable overrides (highest priority)
+    // These are applied even in CI mode so SERVHERD_* env vars still work
     this.config = this.applyEnvironmentOverrides(baseConfig);
 
     return this.config;

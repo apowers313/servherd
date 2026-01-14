@@ -40,6 +40,8 @@ export interface StartCommandOptions {
   tags?: string[];
   description?: string;
   env?: Record<string, string>;
+  /** When true, skip loading config files and use defaults (for CI environments) */
+  ciMode?: boolean;
 }
 
 export interface StartCommandResult {
@@ -70,7 +72,8 @@ export async function executeStart(options: StartCommandOptions): Promise<StartC
 
   try {
     // Load config and registry
-    const config = await configService.load();
+    // In CI mode, skip config files and use defaults for consistent builds
+    const config = await configService.load({ ciMode: options.ciMode });
     await registryService.load();
 
     // Connect to PM2
@@ -573,21 +576,22 @@ export async function startAction(
       return;
     }
 
-    // Check for missing template variables before starting
-    const configService = new ConfigService();
-    let config = await configService.load();
-
-    // Use placeholder port to check config-based variables
-    const templateVars = getTemplateVariables(config, 0);
-    const missingVars = findMissingVariables(command, templateVars);
-    const configurableMissing = missingVars.filter(v => v.configurable);
-
-    // Check CI mode options
+    // Check CI mode options first - this affects config loading
     const ciModeOptions: CIModeOptions = {
       ci: options.ci,
       noCi: options.noCi,
     };
     const isCI = CIDetector.isCI(ciModeOptions);
+
+    // Check for missing template variables before starting
+    // In CI mode, skip config files and use defaults for consistent builds
+    const configService = new ConfigService();
+    let config = await configService.load({ ciMode: isCI });
+
+    // Use placeholder port to check config-based variables
+    const templateVars = getTemplateVariables(config, 0);
+    const missingVars = findMissingVariables(command, templateVars);
+    const configurableMissing = missingVars.filter(v => v.configurable);
 
     if (configurableMissing.length > 0) {
       if (isCI) {
@@ -624,6 +628,7 @@ export async function startAction(
       tags: options.tag,
       description: options.description,
       env,
+      ciMode: isCI,
     });
 
     // Warn about port reassignment (unless in JSON mode)

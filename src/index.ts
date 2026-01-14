@@ -17,7 +17,7 @@ export * from "./utils/logger.js";
 export * from "./utils/template.js";
 
 // Export services
-export { ConfigService } from "./services/config.service.js";
+export { ConfigService, type ConfigLoadOptions } from "./services/config.service.js";
 export { RegistryService } from "./services/registry.service.js";
 export { PortService } from "./services/port.service.js";
 export { ProcessService } from "./services/process.service.js";

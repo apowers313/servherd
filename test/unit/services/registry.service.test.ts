@@ -216,7 +216,7 @@ describe("RegistryService", () => {
       });
 
       expect(entry.protocol).toBe("http");
-      expect(entry.hostname).toBe("localhost");
+      expect(entry.hostname).toBe("0.0.0.0");
     });
 
     it("should use custom protocol and hostname if provided", async () => {

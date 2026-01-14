@@ -208,6 +208,9 @@ describe("PortService", () => {
       const config = createMockConfig({ min: 9060, max: 9070 });
       const service = new PortService(config);
 
+      // Mock port availability to avoid flaky test depending on system state
+      vi.spyOn(service, "isPortAvailable").mockResolvedValue(true);
+
       const result = await service.assignPort("/project", "npm start", 9065);
       expect(result.port).toBe(9065);
       expect(result.reassigned).toBe(false);

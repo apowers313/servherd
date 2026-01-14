@@ -765,4 +765,59 @@ describe("start command", () => {
       );
     });
   });
+
+  describe("CI mode", () => {
+    it("should pass ciMode to configService.load when ciMode is true", async () => {
+      const newServer: ServerEntry = {
+        id: "test-id",
+        name: "brave-tiger",
+        command: "npm start",
+        resolvedCommand: "npm start",
+        cwd: "/project",
+        port: 3456,
+        protocol: "http",
+        hostname: "localhost",
+        env: {},
+        createdAt: new Date().toISOString(),
+        pm2Name: "servherd-brave-tiger",
+      };
+
+      mockRegistryService.addServer.mockResolvedValue(newServer);
+
+      await executeStart({
+        command: "npm start",
+        cwd: "/project",
+        ciMode: true,
+      });
+
+      // Verify configService.load was called with ciMode: true
+      expect(mockConfigService.load).toHaveBeenCalledWith({ ciMode: true });
+    });
+
+    it("should not pass ciMode when ciMode is false or undefined", async () => {
+      const newServer: ServerEntry = {
+        id: "test-id",
+        name: "brave-tiger",
+        command: "npm start",
+        resolvedCommand: "npm start",
+        cwd: "/project",
+        port: 3456,
+        protocol: "http",
+        hostname: "localhost",
+        env: {},
+        createdAt: new Date().toISOString(),
+        pm2Name: "servherd-brave-tiger",
+      };
+
+      mockRegistryService.addServer.mockResolvedValue(newServer);
+
+      await executeStart({
+        command: "npm start",
+        cwd: "/project",
+      });
+
+      // Verify configService.load was called with ciMode: undefined (not true)
+      expect(mockConfigService.load).toHaveBeenCalledWith({ ciMode: undefined });
+    });
+  });
 });

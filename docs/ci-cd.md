@@ -6,9 +6,11 @@ servherd is designed to work seamlessly in CI/CD environments. This guide covers
 
 servherd automatically detects CI environments and adjusts behavior:
 
+- **Skips loading config files** - Uses default configuration instead of `~/.servherd/config.json` or project-local configs to ensure consistent, reproducible builds
+- **Uses `0.0.0.0` as default hostname** - Binds to all network interfaces, avoiding IPv4/IPv6 mismatch issues
 - Disables interactive prompts
 - Uses non-TTY safe output formatting
-- Respects environment variable configuration
+- Respects environment variable overrides (e.g., `SERVHERD_HOSTNAME`, `SERVHERD_PORT_MIN`)
 
 ### Supported CI Systems
 
@@ -352,14 +354,16 @@ servherd info my-server
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CI` | Enable CI mode | `false` |
-| `SERVHERD_HOSTNAME` | Server hostname | `localhost` |
+| `CI` | Enable CI mode (skips config files, uses defaults) | `false` |
+| `SERVHERD_HOSTNAME` | Server hostname | `0.0.0.0` |
 | `SERVHERD_PROTOCOL` | Protocol (http/https) | `http` |
 | `SERVHERD_PORT_MIN` | Minimum port | `3000` |
 | `SERVHERD_PORT_MAX` | Maximum port | `9999` |
 | `SERVHERD_CONFIG_DIR` | Config directory | `~/.servherd` |
 | `LOG_LEVEL` | Log verbosity | `info` |
 | `NO_COLOR` | Disable colors | `false` |
+
+> **Note:** In CI mode, config files (`~/.servherd/config.json` and project-local configs) are ignored. Only environment variables and default values are used. This ensures CI builds are consistent regardless of the developer's local configuration.
 
 ## Troubleshooting
 

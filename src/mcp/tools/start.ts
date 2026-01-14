@@ -8,6 +8,7 @@ import {
   formatMissingVariablesForMCP,
 } from "../../utils/template.js";
 import { ServherdError, ServherdErrorCode } from "../../types/errors.js";
+import { CIDetector } from "../../utils/ci-detector.js";
 
 export const startToolName = "servherd_start";
 
@@ -49,9 +50,13 @@ export interface StartToolResult {
 }
 
 export async function handleStartTool(input: StartToolInput): Promise<StartToolResult> {
+  // Check if running in CI mode - this affects config loading
+  const isCI = CIDetector.isCI();
+
   // Load config and check for missing template variables before starting
+  // In CI mode, skip config files and use defaults for consistent builds
   const configService = new ConfigService();
-  const config = await configService.load();
+  const config = await configService.load({ ciMode: isCI });
 
   // Use a placeholder port (0) to check for missing config-based variables
   // The actual port will be assigned by PortService during executeStart
@@ -78,6 +83,7 @@ export async function handleStartTool(input: StartToolInput): Promise<StartToolR
     tags: input.tags,
     description: input.description,
     env: input.env,
+    ciMode: isCI,
   });
 
   const url = `${result.server.protocol}://${result.server.hostname}:${result.server.port}`;

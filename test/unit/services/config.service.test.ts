@@ -408,4 +408,87 @@ describe("ConfigService", () => {
       expect(config.httpsKey).toBeUndefined();
     });
   });
+
+  describe("CI mode", () => {
+    it("should skip config files and use defaults in CI mode", async () => {
+      // Set up mocks that would return custom config if called
+      mockExplorer.load.mockResolvedValue({
+        config: { ...validConfig, hostname: "custom.local" },
+        filepath: getTestConfigPath(),
+      });
+      mockExplorer.search.mockResolvedValue({
+        config: { hostname: "project.local" },
+        filepath: "/project/.servherdrc",
+      });
+
+      const service = new ConfigService();
+      const config = await service.load({ ciMode: true });
+
+      // Should use DEFAULT_CONFIG, not the mocked values
+      expect(config.hostname).toBe(DEFAULT_CONFIG.hostname);
+      expect(config.protocol).toBe(DEFAULT_CONFIG.protocol);
+
+      // Config files should not be loaded
+      expect(mockExplorer.load).not.toHaveBeenCalled();
+      expect(mockExplorer.search).not.toHaveBeenCalled();
+    });
+
+    it("should still apply environment variable overrides in CI mode", async () => {
+      process.env.SERVHERD_HOSTNAME = "env-override.local";
+      mockExplorer.load.mockResolvedValue({
+        config: { ...validConfig, hostname: "custom.local" },
+        filepath: getTestConfigPath(),
+      });
+
+      const service = new ConfigService();
+      const config = await service.load({ ciMode: true });
+
+      // Environment variable should override the default
+      expect(config.hostname).toBe("env-override.local");
+
+      // But config files should not be loaded
+      expect(mockExplorer.load).not.toHaveBeenCalled();
+    });
+
+    it("should load config files when ciMode is false", async () => {
+      mockExplorer.load.mockResolvedValue({
+        config: { ...validConfig, hostname: "custom.local" },
+        filepath: getTestConfigPath(),
+      });
+      mockExplorer.search.mockResolvedValue(null);
+
+      const service = new ConfigService();
+      const config = await service.load({ ciMode: false });
+
+      // Should use the config file value
+      expect(config.hostname).toBe("custom.local");
+      expect(mockExplorer.load).toHaveBeenCalled();
+    });
+
+    it("should load config files when ciMode is not specified", async () => {
+      mockExplorer.load.mockResolvedValue({
+        config: { ...validConfig, hostname: "custom.local" },
+        filepath: getTestConfigPath(),
+      });
+      mockExplorer.search.mockResolvedValue(null);
+
+      const service = new ConfigService();
+      const config = await service.load();
+
+      // Should use the config file value (backwards compatibility)
+      expect(config.hostname).toBe("custom.local");
+      expect(mockExplorer.load).toHaveBeenCalled();
+    });
+
+    it("should support string argument for backwards compatibility", async () => {
+      mockExplorer.load.mockRejectedValue(new Error("ENOENT"));
+      mockExplorer.search.mockResolvedValue(null);
+
+      const service = new ConfigService();
+      await service.load("/custom/path");
+
+      // Should pass the string as searchFrom
+      expect(mockExplorer.search).toHaveBeenCalledWith("/custom/path");
+    });
+  });
 });

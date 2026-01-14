@@ -51,8 +51,8 @@ This file stores user-level configuration that applies to all projects.
 #### `hostname`
 
 - **Type:** `string`
-- **Default:** `"localhost"`
-- **Description:** Default hostname used for server URLs and the `{{hostname}}` template variable.
+- **Default:** `"0.0.0.0"`
+- **Description:** Default hostname used for server URLs and the `{{hostname}}` template variable. The default of `0.0.0.0` ensures servers bind to all network interfaces, avoiding IPv4/IPv6 mismatch issues.
 
 **Example:**
 ```json
@@ -311,15 +311,21 @@ servherd config --refresh-all --dry-run   # Preview changes
 
 ## CI/CD Configuration
 
-For CI environments, use environment variables:
+When `CI=true` is set (or any CI environment is detected), servherd:
+
+1. **Skips loading config files** - Both `~/.servherd/config.json` and project-local configs are ignored
+2. **Uses default configuration** - Including `hostname: "0.0.0.0"` for reliable binding to all interfaces
+3. **Still respects environment variables** - You can override defaults with `SERVHERD_*` variables
 
 ```yaml
 # GitHub Actions example
 env:
   CI: true
-  SERVHERD_HOSTNAME: ci.local
   SERVHERD_PORT_MIN: 8000
   SERVHERD_PORT_MAX: 8100
+  # SERVHERD_HOSTNAME not needed - defaults to 0.0.0.0 in CI
 ```
+
+This ensures CI builds are consistent and reproducible, regardless of developer-specific local configurations.
 
 See [CI/CD Integration](ci-cd.md) for detailed examples.

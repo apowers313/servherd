@@ -99,7 +99,7 @@ export class RegistryService {
       cwd: options.cwd,
       port: options.port,
       protocol: options.protocol || "http",
-      hostname: options.hostname || "localhost",
+      hostname: options.hostname || "0.0.0.0",
       env: options.env || {},
       createdAt: new Date().toISOString(),
       pm2Name: `servherd-${name}`,
