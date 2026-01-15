@@ -92,6 +92,7 @@
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",
     "pm2": "^6.0.14",
+    "ps-tree": "^1.2.0",
     "proper-lockfile": "^4.1.2",
     "yaml": "^2.8.2",
     "zod": "^3.24.1"
@@ -113,6 +114,7 @@
     "@types/micromatch": "^4.0.10",
     "@types/node": "^22.10.5",
     "@types/proper-lockfile": "^4.1.4",
+    "@types/ps-tree": "^1.1.6",
     "@vitest/coverage-v8": "^2.1.8",
     "commitizen": "^4.3.1",
     "conventional-changelog-conventionalcommits": "^9.1.0",

@@ -3,6 +3,7 @@ import { ConfigService } from "../../services/config.service.js";
 import { RegistryService } from "../../services/registry.service.js";
 import { PortService } from "../../services/port.service.js";
 import { ProcessService } from "../../services/process.service.js";
+import { DirectProcessService } from "../../services/direct-process.service.js";
 import {
   renderTemplate,
   parseEnvStrings,
@@ -501,6 +502,119 @@ function buildTemplateContext(
 }
 
 /**
+ * Options for no-daemon mode execution
+ */
+interface NoDaemonOptions {
+  command: string;
+  cwd: string;
+  name?: string;
+  port?: number;
+  protocol?: "http" | "https";
+  env?: Record<string, string>;
+  config: GlobalConfig;
+  json?: boolean;
+}
+
+/**
+ * Execute start in no-daemon mode (direct process spawning without PM2)
+ * This is used in CI environments where processes should die with the parent.
+ * This function does NOT return until the process exits or a signal is received.
+ */
+async function executeStartNoDaemon(options: NoDaemonOptions): Promise<void> {
+  const { config, json } = options;
+  const cwd = options.cwd || process.cwd();
+
+  // Generate server name
+  const serverName = options.name || generateDeterministicName(options.command, options.env);
+
+  // Assign port
+  const portService = new PortService(config);
+  const { port } = await portService.assignPort(cwd, options.command, options.port);
+
+  const hostname = config.hostname;
+  const protocol = options.protocol ?? config.protocol;
+  const url = `${protocol}://${hostname}:${port}`;
+
+  // Template variables for substitution
+  const templateVars = {
+    ...(config.variables ?? {}),
+    port,
+    hostname,
+    url,
+    "https-cert": config.httpsCert ?? "",
+    "https-key": config.httpsKey ?? "",
+  };
+
+  // Resolve template variables in command
+  const resolvedCommand = renderTemplate(options.command, templateVars, { cwd, lookupServer: () => undefined });
+
+  // Resolve environment variables
+  const resolvedEnv = options.env
+    ? renderEnvTemplates(options.env, templateVars, { cwd, lookupServer: () => undefined })
+    : {};
+
+  // Create direct process service
+  const directService = new DirectProcessService();
+
+  // Print startup info
+  if (json) {
+    console.log(JSON.stringify({
+      action: "started",
+      mode: "no-daemon",
+      server: {
+        name: serverName,
+        port,
+        url,
+        cwd,
+        command: options.command,
+        resolvedCommand,
+      },
+      status: "online",
+    }));
+  } else {
+    console.log(`\x1b[32m✓\x1b[0m Server \x1b[36m${serverName}\x1b[0m started in no-daemon mode`);
+    console.log(`  URL: \x1b[4m${url}\x1b[0m`);
+    console.log(`  Command: ${resolvedCommand}`);
+    console.log("  PID will be shown when process starts...");
+    console.log("\x1b[33m⚠ Running in foreground - process will exit when this command is terminated\x1b[0m");
+    console.log("");
+  }
+
+  // Start the process
+  const proc = directService.start({
+    command: resolvedCommand,
+    cwd,
+    env: resolvedEnv,
+    name: serverName,
+    port,
+  });
+
+  if (!json) {
+    console.log(`  PID: ${proc.pid}`);
+    console.log("");
+    console.log("--- Server output below ---");
+    console.log("");
+  }
+
+  // Wait for the process to exit
+  await new Promise<void>((resolve) => {
+    proc.process.on("exit", (code, signal) => {
+      if (!json) {
+        console.log("");
+        console.log("--- Server output ended ---");
+        console.log("");
+        if (signal) {
+          console.log(`Server exited due to signal: ${signal}`);
+        } else {
+          console.log(`Server exited with code: ${code}`);
+        }
+      }
+      resolve();
+    });
+  });
+}
+
+/**
  * Prompt user for missing template variables and update config
  * @param missing - Array of missing variables
  * @param configService - Config service instance
@@ -557,6 +671,8 @@ export async function startAction(
     json?: boolean;
     ci?: boolean;
     noCi?: boolean;
+    /** When true, use PM2 daemon (default behavior, overrides CI auto-detection) */
+    daemon?: boolean;
   },
 ): Promise<void> {
   try {
@@ -617,6 +733,28 @@ export async function startAction(
     let env: Record<string, string> | undefined;
     if (options.env && options.env.length > 0) {
       env = parseEnvStrings(options.env);
+    }
+
+    // Determine if we should use no-daemon mode
+    // Auto-enabled in CI unless --daemon flag is explicitly set
+    // Note: commander uses --no-daemon to set daemon=false, --daemon sets daemon=true
+    const useNoDaemon = options.daemon === false || (isCI && options.daemon !== true);
+
+    if (useNoDaemon) {
+      // No-daemon mode: spawn process directly without PM2
+      // The process will die when the parent exits
+      await executeStartNoDaemon({
+        command,
+        cwd: process.cwd(),
+        name: options.name,
+        port: options.port,
+        protocol: options.protocol,
+        env,
+        config,
+        json: options.json,
+      });
+      // executeStartNoDaemon keeps running until process exits or signal received
+      return;
     }
 
     const result = await executeStart({
