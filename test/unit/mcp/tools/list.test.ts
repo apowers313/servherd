@@ -309,4 +309,5 @@ describe("servherd_list MCP tool", () => {
         .rejects.toThrow("Cannot specify both --running and --stopped");
     });
   });
+
 });

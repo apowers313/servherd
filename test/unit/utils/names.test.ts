@@ -33,6 +33,27 @@ describe("generateName", () => {
     const name = generateName();
     expect(name).toMatch(/^[a-z-]+$/);
   });
+
+  it("should fallback to timestamp suffix when max attempts exhausted", () => {
+    // Create a mock Set that always claims to have any name
+    const alwaysHas = {
+      has: () => true,
+      size: 0,
+      [Symbol.iterator]: function* () {},
+      add: () => alwaysHas,
+      clear: () => {},
+      delete: () => false,
+      forEach: () => {},
+      entries: function* () {},
+      keys: function* () {},
+      values: function* () {},
+    } as Set<string>;
+
+    // With maxAttempts=1, it will immediately fallback to timestamp suffix
+    const name = generateName(alwaysHas, 1);
+    // Name should have format: adjective-noun-XXXX (4 char timestamp suffix)
+    expect(name).toMatch(/^[a-z]+-[a-z]+-[a-z0-9]{4}$/);
+  });
 });
 
 describe("normalizeForHash", () => {

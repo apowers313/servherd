@@ -6,11 +6,32 @@ servherd is designed to work seamlessly in CI/CD environments. This guide covers
 
 servherd automatically detects CI environments and adjusts behavior:
 
+- **Uses no-daemon mode** - Processes are spawned directly as children (not via PM2) and automatically terminate when the parent process exits. This prevents orphaned processes and hanging CI jobs.
 - **Skips loading config files** - Uses default configuration instead of `~/.servherd/config.json` or project-local configs to ensure consistent, reproducible builds
 - **Uses `0.0.0.0` as default hostname** - Binds to all network interfaces, avoiding IPv4/IPv6 mismatch issues
 - Disables interactive prompts
 - Uses non-TTY safe output formatting
 - Respects environment variable overrides (e.g., `SERVHERD_HOSTNAME`, `SERVHERD_PORT_MIN`)
+
+### No-Daemon Mode
+
+In CI environments, servherd runs servers in **no-daemon mode** by default:
+
+- Processes run as direct children of the servherd command
+- Server output is streamed to stdout/stderr with `[server-name]` prefixes
+- All processes automatically terminate when the CI job ends
+- No PM2 daemon is started or required
+- No manual cleanup (`servherd stop`) is needed
+
+You can override this behavior with flags:
+
+```bash
+# Force PM2 daemon mode in CI (if you need background processes)
+servherd start --daemon -- npm run dev --port {{port}}
+
+# Force no-daemon mode outside CI (useful for local debugging)
+servherd start --no-daemon -- npm run dev --port {{port}}
+```
 
 ### Supported CI Systems
 
@@ -52,19 +73,17 @@ jobs:
       - name: Install servherd
         run: npm install -g servherd
 
-      - name: Start development server
+      - name: Start server and run E2E tests
         run: |
-          servherd start --name app-server -- npm run dev --port {{port}}
-          # Wait for server to be ready
-          sleep 5
-
-      - name: Run E2E tests
-        run: npm run test:e2e
-
-      - name: Stop server
-        if: always()
-        run: servherd stop --all
+          # Server runs in foreground (no-daemon mode)
+          # Use & to background it, or run tests in a separate step
+          servherd start --name app-server -- npm run dev --port {{port}} &
+          sleep 5  # Wait for server to be ready
+          npm run test:e2e
+          # Server automatically terminates when job ends
 ```
+
+> **Note:** In no-daemon mode, the server runs in the foreground. Use `&` to background it if you need to run additional commands in the same step. No cleanup step is needed - the server terminates automatically when the job ends.
 
 ### With Custom Port Range
 
@@ -98,9 +117,10 @@ jobs:
         run: |
           npm ci
           npm install -g servherd
-          servherd start -- npm run dev --port {{port}}
+          servherd start -- npm run dev --port {{port}} &
+          sleep 5
           npm test
-          servherd stop --all
+          # No cleanup needed - server terminates with job
 ```
 
 ## GitLab CI
@@ -118,9 +138,10 @@ e2e-test:
   script:
     - npm ci
     - npm install -g servherd
-    - servherd start --name test-server -- npm run dev --port {{port}}
+    - servherd start --name test-server -- npm run dev --port {{port}} &
+    - sleep 5
     - npm run test:e2e
-    - servherd stop --all
+    # No cleanup needed - server terminates with job
   variables:
     CI: "true"
     SERVHERD_PORT_MIN: "8000"
@@ -214,15 +235,12 @@ jobs:
             - node_modules
       - run: npm install -g servherd
       - run:
-          name: Start server
-          command: servherd start --name app -- npm run dev --port {{port}}
-      - run:
-          name: Run tests
-          command: npm run test:e2e
-      - run:
-          name: Cleanup
-          command: servherd stop --all
-          when: always
+          name: Start server and run tests
+          command: |
+            servherd start --name app -- npm run dev --port {{port}} &
+            sleep 5
+            npm run test:e2e
+            # No cleanup needed - server terminates with job
 
 workflows:
   test:
@@ -285,23 +303,27 @@ CMD ["servherd", "start", "--", "npm", "run", "dev", "--port", "{{port}}"]
 
 ## Best Practices
 
-### 1. Always Clean Up
+### 1. Cleanup (Usually Automatic)
 
-Use `always()` or equivalent to ensure servers are stopped:
+In **no-daemon mode** (the default for CI), cleanup is automatic - processes terminate when the CI job ends. No explicit cleanup step is needed.
+
+If you use `--daemon` flag to run servers via PM2, add cleanup:
 
 ```yaml
-# GitHub Actions
+# GitHub Actions (only needed with --daemon)
 - name: Stop servers
   if: always()
   run: servherd stop --all
 
-# Jenkins
+# Jenkins (only needed with --daemon)
 post {
     always {
         sh 'servherd stop --all || true'
     }
 }
 ```
+
+> **Note:** In no-daemon mode, `servherd stop` and `servherd list` won't show these servers since they're not managed by PM2.
 
 ### 2. Use Specific Port Ranges
 
@@ -381,14 +403,31 @@ export SERVHERD_PORT_MAX=9100
 ### Server Not Starting
 
 ```bash
-# Check server logs
-servherd logs my-server --error
+# In no-daemon mode, errors appear directly in stdout/stderr
+# Look for error messages in your CI job output
 
 # Try starting manually first
 npm run dev --port 3000
+
+# If using --daemon mode, check server logs
+servherd logs my-server --error
 ```
 
-### PM2 Not Available
+### CI Job Hangs
+
+If your CI job hangs, it may be waiting for input or a server that won't start:
+
+```bash
+# Ensure CI environment is detected
+echo $CI  # Should be "true"
+
+# Or explicitly enable CI mode
+servherd start --ci -- npm run dev --port {{port}}
+```
+
+### PM2 Issues (--daemon mode only)
+
+These issues only apply when using `--daemon` flag:
 
 ```bash
 # Ensure PM2 is installed
@@ -399,6 +438,10 @@ npx pm2 list
 ```
 
 ### Cleanup Orphaned Processes
+
+In **no-daemon mode** (default), processes die with the parent - no cleanup needed.
+
+If using `--daemon` mode and processes are orphaned:
 
 ```bash
 # List all PM2 processes

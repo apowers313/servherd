@@ -41,6 +41,12 @@ describe("createLogger", () => {
     const childLogger = logger.child({ module: "test" });
     expect(childLogger.info).toBeDefined();
   });
+
+  it("should create non-pretty logger when pretty is explicitly false", () => {
+    const logger = createLogger({ level: "info", pretty: false });
+    expect(logger.level).toBe("info");
+    expect(logger.info).toBeDefined();
+  });
 });
 
 describe("LoggerOptions", () => {

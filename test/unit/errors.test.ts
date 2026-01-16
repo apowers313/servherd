@@ -133,6 +133,16 @@ describe("formatErrorForCLI", () => {
     const formatted = formatErrorForCLI("string error" as unknown as Error);
     expect(formatted).toContain("Unknown error");
   });
+
+  it("should include stdout details when present", () => {
+    const error = new ServherdError(
+      ServherdErrorCode.PM2_START_FAILED,
+      "Failed to start",
+      { stdout: "Some stdout output" },
+    );
+    const formatted = formatErrorForCLI(error);
+    expect(formatted).toContain("Some stdout output");
+  });
 });
 
 describe("formatErrorForMCP", () => {
@@ -166,5 +176,13 @@ describe("formatErrorForMCP", () => {
     const parsed = JSON.parse(formatted.content[0].text);
     expect(parsed.code).toBe(ServherdErrorCode.UNKNOWN_ERROR);
     expect(parsed.message).toBe("Regular error");
+  });
+
+  it("should handle non-Error values for MCP response", () => {
+    const formatted = formatErrorForMCP("string error");
+    expect(formatted.isError).toBe(true);
+    const parsed = JSON.parse(formatted.content[0].text);
+    expect(parsed.code).toBe(ServherdErrorCode.UNKNOWN_ERROR);
+    expect(parsed.message).toBe("An unknown error occurred");
   });
 });
