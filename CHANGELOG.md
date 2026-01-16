@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/apowers313/servherd/compare/v1.1.0...v1.1.1) (2026-01-16)
+
+
+### Bug Fixes
+
+* fix ci mode to prevent hanging in ci ([bc2e91f](https://github.com/apowers313/servherd/commit/bc2e91f1ff370d7ce386413932b5ab7af4a957df))
+
 # [1.1.0](https://github.com/apowers313/servherd/compare/v1.0.0...v1.1.0) (2026-01-13)
 
 
