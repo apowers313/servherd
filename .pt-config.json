@@ -15,21 +15,12 @@
   "autoReview": true,
   "autoRun": true,
   "gitPromptDir": ".git-prompts",
-  "handlebarsExtensions": [],
-  "version": "4.0.0",
+  "version": "7.0.0",
   "outputCapture": {
     "enabled": false,
     "directory": ".pthistory",
     "maxSizeMB": 50,
     "retentionDays": 30
   },
-  "autoAnnotate": {
-    "enabled": false,
-    "triggers": [
-      "claude",
-      "ai",
-      "assistant"
-    ],
-    "analysisPrompt": "analyze-execution"
-  }
+  "libraries": []
 }

@@ -8,7 +8,9 @@ export interface LoggerOptions {
 }
 
 /**
- * Create a configured pino logger instance
+ * Create a configured pino logger instance.
+ * All log output is sent to stderr so it doesn't interfere with
+ * stdout-based protocols like MCP stdio transport.
  */
 export function createLogger(options: LoggerOptions): Logger {
   const level = options.level ?? "info";
@@ -23,12 +25,13 @@ export function createLogger(options: LoggerOptions): Logger {
           colorize: true,
           translateTime: "SYS:standard",
           ignore: "pid,hostname",
+          destination: 2,
         },
       },
     });
   }
 
-  return pino({ level });
+  return pino({ level }, pino.destination(2));
 }
 
 // Export a default logger instance
