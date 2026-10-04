@@ -35,6 +35,8 @@ export const ServerEntrySchema = z.object({
   pm2Name: z.string(),
   tags: z.array(z.string()).optional(),
   description: z.string().optional(),
+  // Restart the process when it exits or crashes
+  autorestart: z.boolean().optional(),
   // Config tracking for drift detection
   usedConfigKeys: z.array(z.string()).optional(),
   configSnapshot: ConfigSnapshotSchema.optional(),
@@ -67,6 +69,7 @@ export interface AddServerOptions {
   env?: Record<string, string>;
   tags?: string[];
   description?: string;
+  autorestart?: boolean;
   usedConfigKeys?: string[];
   configSnapshot?: ConfigSnapshot;
 }

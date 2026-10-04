@@ -161,6 +161,7 @@ export async function executeRestart(options: RestartCommandOptions): Promise<Re
                 ...env,
                 PORT: String(server.port),
               },
+              autorestart: server.autorestart,
             });
           } else {
             // No drift, just restart normally

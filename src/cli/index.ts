@@ -42,6 +42,8 @@ export function createProgram(): Command {
     .option("-e, --env <KEY=VALUE...>", "Environment variables (supports {{port}}, {{hostname}}, {{url}}, {{https-cert}}, {{https-key}} templates)")
     .option("--no-daemon", "Run process directly without PM2 daemon (auto-enabled in CI). Process will die when parent exits.")
     .option("--daemon", "Force use of PM2 daemon even in CI environments")
+    .option("--autorestart", "Restart the server when it exits or crashes, with exponential backoff (kept across later starts)")
+    .option("--no-autorestart", "Turn automatic restart off for a server started with --autorestart")
     .action(async (commandArgs: string[], options, cmd) => {
       const globalOpts = cmd.parent?.opts() ?? {};
       await startAction(commandArgs, { ...options, json: globalOpts.json, ci: globalOpts.ci, noCi: globalOpts.noCi });

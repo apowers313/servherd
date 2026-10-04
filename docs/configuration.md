@@ -216,6 +216,7 @@ The registry stores information about all managed servers. You typically don't e
 | `env` | object | Environment variables |
 | `tags` | string[] | Tags for organization |
 | `description` | string | Server description |
+| `autorestart` | boolean | Restart the process when it exits or crashes (absent means off) |
 | `createdAt` | string | ISO timestamp of creation |
 | `pm2Name` | string | PM2 process name |
 

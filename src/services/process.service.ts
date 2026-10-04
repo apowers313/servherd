@@ -16,6 +16,9 @@ const pm2 = (await import("pm2")).default;
 
 const SERVHERD_PREFIX = "servherd-";
 
+/** First delay before pm2 restarts a process that exited; pm2 grows it on each crash. */
+const RESTART_BACKOFF_MS = 100;
+
 /**
  * Service for managing processes via PM2
  */
@@ -74,6 +77,9 @@ export class ProcessService {
           env: options.env,
           instances: options.instances,
           autorestart: options.autorestart ?? false,
+          // A crash-looping process backs off (100 ms, growing to pm2's 15 s cap)
+          // instead of restarting in a tight loop.
+          exp_backoff_restart_delay: options.autorestart ? RESTART_BACKOFF_MS : undefined,
           watch: options.watch ?? false,
           max_memory_restart: options.max_memory_restart,
           output: options.output,
