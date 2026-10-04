@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/apowers313/servherd/compare/v1.1.2...v1.2.0) (2026-10-04)
+
+
+### Features
+
+* add --autorestart so pm2 restarts a server that exits or crashes ([9d04ef7](https://github.com/apowers313/servherd/commit/9d04ef75991191a92c001537eff77543eb71d9d8))
+
 ## [1.1.2](https://github.com/apowers313/servherd/compare/v1.1.1...v1.1.2) (2026-02-11)
 
 
