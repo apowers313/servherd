@@ -28,6 +28,7 @@ export const startToolSchema = z.object({
   protocol: z.enum(["http", "https"]).optional().describe("Protocol to use (http or https). Defaults to global config setting"),
   tags: z.array(z.string()).optional().describe("Tags for filtering/grouping servers, e.g., ['frontend', 'development']"),
   description: z.string().optional().describe("Description of the server's purpose, e.g., 'React development server for the dashboard'"),
+  autorestart: z.boolean().optional().describe("Restart the server automatically when it exits or crashes, with exponential backoff. Omitted keeps an existing server's setting; off for a new server"),
   env: z.record(z.string()).optional().describe("Environment variables, e.g., {\"NODE_ENV\": \"development\", \"API_URL\": \"http://localhost:{{port}}\"}"),
 });
 
@@ -83,6 +84,7 @@ export async function handleStartTool(input: StartToolInput): Promise<StartToolR
     tags: input.tags,
     description: input.description,
     env: input.env,
+    autorestart: input.autorestart,
     ciMode: isCI,
   });
 

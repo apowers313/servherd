@@ -127,6 +127,32 @@ describe("servherd_start MCP tool", () => {
     expect(result.message).toContain("started");
   });
 
+  it("should start a new server with autorestart on when asked", async () => {
+    mockRegistryService.addServer.mockImplementation(async (opts) => ({
+      id: "test-id",
+      name: "brave-tiger",
+      command: opts.command,
+      resolvedCommand: opts.command,
+      cwd: "/project",
+      port: 3456,
+      protocol: "http",
+      hostname: "localhost",
+      env: {},
+      createdAt: new Date().toISOString(),
+      pm2Name: "servherd-brave-tiger",
+      autorestart: opts.autorestart,
+    }));
+
+    expect(startToolSchema.safeParse({ command: "node a.js", autorestart: true }).success).toBe(true);
+    await handleStartTool({ command: "node a.js", cwd: "/project", autorestart: true });
+
+    expect(mockRegistryService.addServer).toHaveBeenCalledWith(expect.objectContaining({ autorestart: true }));
+    expect(mockPM2.start).toHaveBeenCalledWith(
+      expect.objectContaining({ autorestart: true, exp_backoff_restart_delay: 100 }),
+      expect.any(Function),
+    );
+  });
+
   it("should return existing action when server is already running", async () => {
     const existingServer: ServerEntry = {
       id: "existing-id",

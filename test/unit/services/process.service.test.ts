@@ -66,6 +66,26 @@ describe("ProcessService", () => {
       );
     });
 
+    it("should leave autorestart off by default", async () => {
+      await service.connect();
+      await service.start({ name: "servherd-test", script: "node" });
+
+      expect(mockPM2.start).toHaveBeenCalledWith(
+        expect.objectContaining({ autorestart: false, exp_backoff_restart_delay: undefined }),
+        expect.any(Function),
+      );
+    });
+
+    it("should restart with exponential backoff when autorestart is on", async () => {
+      await service.connect();
+      await service.start({ name: "servherd-test", script: "node", autorestart: true });
+
+      expect(mockPM2.start).toHaveBeenCalledWith(
+        expect.objectContaining({ autorestart: true, exp_backoff_restart_delay: 100 }),
+        expect.any(Function),
+      );
+    });
+
     it("should throw when not connected", async () => {
       await expect(
         service.start({

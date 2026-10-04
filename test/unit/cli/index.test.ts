@@ -77,5 +77,20 @@ describe("CLI", () => {
 
       expect(capturedArgs).toEqual(["npm", "run", "test", "--", "--coverage", "--", "--verbose"]);
     });
+
+    it.each([
+      [["--autorestart"], true],
+      [["--no-autorestart"], false],
+      [[], undefined],
+    ])("should read start %j as autorestart %s", async (flags, expected) => {
+      const program = createProgram();
+      const startCmd = program.commands.find((cmd) => cmd.name() === "start");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (startCmd as any)._actionHandler = () => undefined;
+
+      await program.parseAsync(["node", "servherd", "start", ...flags, "--", "node", "server.js"]);
+
+      expect(startCmd?.opts().autorestart).toBe(expected);
+    });
   });
 });

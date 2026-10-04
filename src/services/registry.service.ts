@@ -105,6 +105,7 @@ export class RegistryService {
       pm2Name: `servherd-${name}`,
       tags: options.tags,
       description: options.description,
+      autorestart: options.autorestart,
       usedConfigKeys: options.usedConfigKeys,
       configSnapshot: options.configSnapshot,
     };

@@ -302,6 +302,7 @@ servherd start [options] -- <command>
 | `-t, --tag <tag...>` | Tags for grouping servers (can use multiple times) |
 | `-d, --description <text>` | Description of the server |
 | `-e, --env <KEY=VALUE...>` | Environment variables (supports templates) |
+| `--autorestart` | Restart the server when it exits or crashes (pm2 backs off from 100 ms up to 15 s). Remembered for later starts; `--no-autorestart` turns it off |
 
 **Template Variables:**
 | Variable | Description | Example |

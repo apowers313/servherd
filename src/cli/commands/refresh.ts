@@ -212,6 +212,7 @@ export async function executeRefresh(options: RefreshCommandOptions): Promise<Re
             ...env,
             PORT: String(port),
           },
+          autorestart: server.autorestart,
         });
 
         const status = await processService.getStatus(server.pm2Name);

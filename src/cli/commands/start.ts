@@ -41,6 +41,11 @@ export interface StartCommandOptions {
   tags?: string[];
   description?: string;
   env?: Record<string, string>;
+  /**
+   * Restart the process when it exits or crashes. Undefined keeps an existing server's
+   * setting (off for a new server).
+   */
+  autorestart?: boolean;
   /** When true, skip loading config files and use defaults (for CI environments) */
   ciMode?: boolean;
 }
@@ -55,6 +60,8 @@ export interface StartCommandResult {
   envChanged?: boolean;
   /** Whether the command was changed (with explicit -n) */
   commandChanged?: boolean;
+  /** Whether the autorestart setting was changed */
+  autorestartChanged?: boolean;
   /** Whether config drift was detected and applied */
   configDrift?: boolean;
   /** Details of config drift that was applied */
@@ -150,8 +157,9 @@ export async function executeStart(options: StartCommandOptions): Promise<StartC
         ? renderEnvTemplates(options.env, templateVars, templateContext)
         : undefined;
       const envChanged = hasEnvChanged(existingServer.env, resolvedEnv);
+      const autorestartChanged = isAutorestartChange(options.autorestart, existingServer.autorestart);
 
-      if (status === "online" && !envChanged && !commandChanged) {
+      if (status === "online" && !envChanged && !commandChanged && !autorestartChanged) {
         // Already running with same config
         return {
           action: "existing",
@@ -161,8 +169,8 @@ export async function executeStart(options: StartCommandOptions): Promise<StartC
         };
       }
 
-      // Command changed, env changed, or server stopped/errored - need to restart
-      if (commandChanged || envChanged) {
+      // Command, env or autorestart changed, or server stopped/errored - need to restart
+      if (commandChanged || envChanged || autorestartChanged) {
         // Build template vars for re-resolving command
         const newTemplateVars = {
           ...(config.variables ?? {}),
@@ -182,10 +190,12 @@ export async function executeStart(options: StartCommandOptions): Promise<StartC
         const configSnapshot = createConfigSnapshot(config, usedConfigKeys, newCommand);
 
         // Update the registry (undefined env means "clear env", use empty object)
+        const autorestart = options.autorestart ?? existingServer.autorestart;
         await registryService.updateServer(existingServer.id, {
           command: newCommand,
           resolvedCommand: newResolvedCommand,
           env: resolvedEnv ?? {},
+          autorestart,
           usedConfigKeys,
           configSnapshot,
         });
@@ -202,6 +212,7 @@ export async function executeStart(options: StartCommandOptions): Promise<StartC
           command: newCommand,
           resolvedCommand: newResolvedCommand,
           env: resolvedEnv ?? {},
+          autorestart,
           usedConfigKeys,
           configSnapshot,
         };
@@ -209,11 +220,10 @@ export async function executeStart(options: StartCommandOptions): Promise<StartC
         // Start with new config
         await startProcess(processService, updatedServer);
 
-        if (commandChanged) {
-          logger.info({ serverName: existingServer.name }, "Server restarted due to command change");
-        } else {
-          logger.info({ serverName: existingServer.name }, "Server restarted due to environment change");
-        }
+        logger.info(
+          { serverName: existingServer.name, commandChanged, envChanged, autorestartChanged },
+          "Server restarted due to a configuration change",
+        );
 
         return {
           action: "restarted",
@@ -221,6 +231,7 @@ export async function executeStart(options: StartCommandOptions): Promise<StartC
           status: "online",
           envChanged,
           commandChanged,
+          autorestartChanged,
         };
       }
 
@@ -291,6 +302,7 @@ export async function executeStart(options: StartCommandOptions): Promise<StartC
       tags: options.tags,
       description: options.description,
       env: resolvedEnv,
+      autorestart: options.autorestart,
       usedConfigKeys,
       configSnapshot,
     });
@@ -322,6 +334,13 @@ export async function executeStart(options: StartCommandOptions): Promise<StartC
 }
 
 /**
+ * Whether a requested autorestart setting differs from the server's (undefined requests none)
+ */
+function isAutorestartChange(requested: boolean | undefined, current: boolean | undefined): boolean {
+  return requested !== undefined && requested !== (current ?? false);
+}
+
+/**
  * Start a process using PM2
  */
 async function startProcess(processService: ProcessService, server: ServerEntry): Promise<void> {
@@ -337,6 +356,7 @@ async function startProcess(processService: ProcessService, server: ServerEntry)
       ...server.env,
       PORT: String(server.port),
     },
+    autorestart: server.autorestart,
   });
 }
 
@@ -410,6 +430,7 @@ async function handleDriftRefresh(
   // Re-extract used config keys and create new snapshot
   const usedConfigKeys = extractUsedConfigKeys(newCommand);
   const configSnapshot = createConfigSnapshot(config, usedConfigKeys, newCommand);
+  const autorestart = options.autorestart ?? server.autorestart;
 
   // Update registry
   await registryService.updateServer(server.id, {
@@ -419,6 +440,7 @@ async function handleDriftRefresh(
     hostname,
     resolvedCommand,
     env: resolvedEnv,
+    autorestart,
     usedConfigKeys,
     configSnapshot,
   });
@@ -438,6 +460,7 @@ async function handleDriftRefresh(
     hostname,
     resolvedCommand,
     env: resolvedEnv,
+    autorestart,
     usedConfigKeys,
     configSnapshot,
   };
@@ -673,6 +696,8 @@ export async function startAction(
     noCi?: boolean;
     /** When true, use PM2 daemon (default behavior, overrides CI auto-detection) */
     daemon?: boolean;
+    /** Restart the process when it exits (--autorestart / --no-autorestart) */
+    autorestart?: boolean;
   },
 ): Promise<void> {
   try {
@@ -766,6 +791,7 @@ export async function startAction(
       tags: options.tag,
       description: options.description,
       env,
+      autorestart: options.autorestart,
       ciMode: isCI,
     });
 

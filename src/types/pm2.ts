@@ -9,6 +9,7 @@ export interface PM2StartOptions {
   cwd?: string;
   env?: Record<string, string>;
   instances?: number;
+  /** Restart the process when it exits (servherd turns this off unless asked) */
   autorestart?: boolean;
   watch?: boolean;
   max_memory_restart?: string | number;

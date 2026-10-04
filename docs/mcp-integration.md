@@ -87,6 +87,7 @@ Start a new development server.
 | `description` | string | No | Server description |
 | `tags` | string[] | No | Tags for grouping |
 | `env` | object | No | Environment variables |
+| `autorestart` | boolean | No | Restart the server when it exits or crashes, with exponential backoff. Omitted keeps an existing server's setting; off for a new server |
 
 **Example:**
 ```json
